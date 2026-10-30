@@ -99,7 +99,8 @@ updates per second: [0, 0, 3, 52, 17, ...]
 ```
 
 It exits 0 when the session ran to the end or the window was closed, 1 when it failed,
-the sign-in was refused or no window could be opened, and 2 for a usage error.
+the sign-in was refused, no window could be opened or no password was given (Ctrl-D at
+an empty prompt, outside Windows), 2 for a usage error, and 130 when Ctrl-C stopped it.
 
 ## The library
 

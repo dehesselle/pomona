@@ -38,13 +38,20 @@ def run(args: argparse.Namespace) -> int:
     host, port = split_target(args.target)
     # From the environment or a prompt; never from a pipe on stdin, which made
     # every sign-in fail when PowerShell fed it.
-    password = os.environ.get("POMONA_PASSWORD") or getpass.getpass(
-        f"Password for {args.user} at {host}: "
-    )
     try:
+        password = os.environ.get("POMONA_PASSWORD") or getpass.getpass(
+            f"Password for {args.user} at {host}: "
+        )
         if args.probe is not None:
             return _probe(host, port, password, args)
         return _window(host, port, password, args)
+    except KeyboardInterrupt:
+        # Ctrl-C ends the command without a traceback, as a shell reports it.
+        return 130
+    except EOFError:
+        # Ctrl-D at the prompt.
+        print("pomona: no password given", file=sys.stderr)
+        return 1
     except (PomonaError, OSError, RuntimeError) as error:
         print(f"pomona: {error}", file=sys.stderr)
         return 1

@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
+import getpass
 from pathlib import Path
 
 import fakemac
@@ -43,6 +44,22 @@ def test_probe_against_the_fake_mac(monkeypatch, capsys):
     assert exc.value.code == 0, out
     assert "signed in: 1440x900 'Fake Mac'" in out
     assert "encoding  1011:" in out
+
+
+@pytest.mark.parametrize(
+    ("raised", "code", "err"),
+    [(KeyboardInterrupt, 130, ""), (EOFError, 1, "pomona: no password given\n")],
+)
+def test_leaving_the_prompt_shows_no_traceback(monkeypatch, capsys, raised, code, err):
+    def ask(prompt):
+        raise raised
+
+    monkeypatch.delenv("POMONA_PASSWORD", raising=False)
+    monkeypatch.setattr(getpass, "getpass", ask)
+    with pytest.raises(SystemExit) as exc:
+        main(["127.0.0.1:1", "-u", "me"])
+    assert exc.value.code == code
+    assert capsys.readouterr().err == err
 
 
 def test_a_refused_sign_in_exits_1(monkeypatch, capsys):
