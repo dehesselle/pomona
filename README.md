@@ -6,8 +6,8 @@ Adaptive quality, which runs over a single TCP connection. That connection can b
 forwarded over ssh, which High Performance mode cannot. A Rust extension does the
 decoding and draws the window.
 
-**Status:** early development. So far it decodes a recorded Adaptive stream; signing in,
-the window and input are next.
+**Status:** early development. It signs in and receives the Mac's picture, without a
+window yet: `pomona HOST -u USER --probe 10` reports what arrived.
 
 ## Install
 

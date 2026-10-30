@@ -49,6 +49,8 @@ _U32_LENGTH = frozenset({ZLIB, ZRLE, APPLE_1000, APPLE_1001, APPLE_1002, ADAPTIV
 _U16_LENGTH = frozenset({DISPLAY_LAYOUT, VENDOR_KEYSYMS, KEYBOARD_SOURCE})
 _NO_BODY = frozenset({CURSOR_POS, DESKTOP_SIZE, LAST_RECT})
 _REKEY_LENGTH = 36
+# The largest rectangle body read: a full 5K screen of raw pixels fits.
+MAX_BODY = 64 << 20
 _DISPLAY_INFO_HEADER = 10
 _DISPLAY_INFO_SCREEN = 0x1C
 
@@ -186,7 +188,13 @@ class Parser:
         if encoding in _U32_LENGTH:
             if start + 4 > len(buffer):
                 return None
-            return 4, start + 4 + _U32.unpack_from(buffer, start)[0]
+            length = _U32.unpack_from(buffer, start)[0]
+            if length > MAX_BODY:
+                # Rather than buffer whatever a broken stream claims.
+                raise ProtocolError(
+                    f"a {length}-byte rectangle at stream offset {self._offset + start}"
+                )
+            return 4, start + 4 + length
         if encoding in _U16_LENGTH:
             if start + 2 > len(buffer):
                 return None

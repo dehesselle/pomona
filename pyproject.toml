@@ -12,7 +12,7 @@ license = "MIT"
 license-files = ["LICENSE", "LICENSES/*", "crates/apple-adaptive/LICENSE"]
 authors = [{ name = "René de Hesselle", email = "dehesselle@web.de" }]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["cryptography>=46"]
 
 [project.scripts]
 pomona = "pomona:main"

@@ -59,6 +59,19 @@ record layer came up, cut after the 196th message. `tests/test_adaptive_replay.p
 replays it and checks the framebuffer's hash at three points. Those hashes were checked
 once against an independent pure-Python port of the decoder.
 
+`tests/fakemac.py` stands in for a Mac. It speaks the server's side of the type-30
+sign-in, ServerInit, the prelude and the rekey, then replays a stream through the record
+layer in records of uneven sizes and keeps what the client sent. Its record layer is
+written apart from `pomona.record`, so a mistake made the same way on both sides still
+fails. `tests/test_session.py` runs whole sessions against it.
+
+A live test against a NoMac Mac is the only check of what the fake cannot know. Through
+an ssh forward to the Mac's port 5900:
+
+```sh
+POMONA_PASSWORD=... uv run pomona 127.0.0.1:PORT -u USER --probe 15
+```
+
 ## Lint
 
 ```sh
