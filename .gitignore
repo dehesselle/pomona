@@ -17,3 +17,6 @@ wheels/
 target/
 *.pyd
 *.so
+
+# Personal helpers
+justfile

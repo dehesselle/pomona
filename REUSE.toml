@@ -8,7 +8,6 @@ path = [
     "uv.lock",
     "Cargo.lock",
     ".python-version",
-    "justfile",
     "tests/fixtures/**",
 ]
 SPDX-FileCopyrightText = "2026 René de Hesselle <dehesselle@web.de>"
