@@ -6,8 +6,9 @@ Adaptive quality, which runs over a single TCP connection. That connection can b
 forwarded over ssh, which High Performance mode cannot. A Rust extension does the
 decoding and draws the window.
 
-**Status:** early development. It shows the Mac's screen in a window and passes the
-keyboard and mouse to it, tried on Windows; macOS as a client is next.
+**Status:** early development. It shows the Mac's screen in a window, passes the
+keyboard, mouse and pasteboard text to it, and reconnects when the connection drops;
+tried on Windows.
 
 ## Install and use
 

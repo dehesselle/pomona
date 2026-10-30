@@ -20,18 +20,7 @@ the Mac is involved.
 
 Question: how does Adaptive look while it moves and refines (text while scrolling)?
 
-## 2. Pasteboard and polish
-
-- The pasteboard both ways, text only, through `arboard`
-  ([protocol.md](protocol.md#the-pasteboard)).
-- Reconnecting after the Mac drops the session.
-- Acting on `MiscStatus` 17 (a login or logout at the Mac).
-- Keys from a layout with AltGr and dead keys, live: so far only the unit tests and a
-  US layout have tried them.
-- The keyboard source the Mac reports (`0x455`): its layout, and whether a secure text
-  field has the focus.
-
-## 3. qem
+## 2. qem
 
 `qem desktop` uses Pomona in-process when installed (an extra, `qem[desktop]`):
 qem opens the ssh forward and fetches the Mac's login, and hands both to Pomona, so
@@ -46,3 +35,9 @@ forward the Screen Sharing port for it.
 - Linux.
 - The High Performance relay, if Adaptive turns out not to be enough
   ([high-performance.md](high-performance.md)).
+- Dead keys, live. Umlauts and AltGr on a German layout were tried by hand; dead keys
+  only in the unit tests.
+- A login or logout at the Mac, live: Pomona logs it and follows the session if the Mac
+  closes it, but no live test has done one.
+- Showing in the window when the Mac's focus is in a password field
+  (`Session.keyboard_source`), and while the window is reconnecting.

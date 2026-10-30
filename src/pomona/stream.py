@@ -39,6 +39,7 @@ FRAMEBUFFER_UPDATE = 0x00
 BELL = 0x02
 SERVER_CUT_TEXT = 0x03
 MISC_STATUS = 0x14
+PASTEBOARD = 0x1F
 
 _U16 = struct.Struct(">H")
 _U32 = struct.Struct(">I")
@@ -51,6 +52,9 @@ _NO_BODY = frozenset({CURSOR_POS, DESKTOP_SIZE, LAST_RECT})
 _REKEY_LENGTH = 36
 # The largest rectangle body read: a full 5K screen of raw pixels fits.
 MAX_BODY = 64 << 20
+# The Mac sends no larger pasteboard, and closes a connection that does.
+MAX_PASTEBOARD = 100 << 20
+_PASTEBOARD_HEADER = struct.Struct(">BBBxIII")
 _DISPLAY_INFO_HEADER = 10
 _DISPLAY_INFO_SCREEN = 0x1C
 
@@ -90,8 +94,24 @@ class ServerCutText:
 class MiscStatus:
     body: bytes
 
+    @property
+    def command(self) -> int | None:
+        """What happened, for the usual four-byte body (`u16` 1, `u16` command)."""
+        return _U16.unpack_from(self.body, 2)[0] if len(self.body) == 4 else None
 
-Message = FramebufferUpdate | Bell | ServerCutText | MiscStatus
+
+@dataclass(frozen=True, slots=True)
+class PasteboardContents:
+    """The Mac's pasteboard, as a fetch asked for it: `compressed` is a zlib
+    archive of `uncompressed` bytes (see `pomona.pasteboard`)."""
+
+    promises: bool
+    echo: int
+    uncompressed: int
+    compressed: bytes
+
+
+Message = FramebufferUpdate | Bell | ServerCutText | MiscStatus | PasteboardContents
 
 
 class Parser:
@@ -148,9 +168,33 @@ class Parser:
                 if end > len(buffer)
                 else (ServerCutText(bytes(buffer[start + 8 : end])), end)
             )
+        if kind == PASTEBOARD:
+            return self._pasteboard(start)
         raise ProtocolError(
             f"unknown server message 0x{kind:02x} at stream offset {self._offset + start}"
         )
+
+    def _pasteboard(self, start: int) -> tuple[PasteboardContents, int] | None:
+        buffer = self._buffer
+        # type, pad, promises, pad, u32 echo, u32 uncompressed, u32 compressed
+        if start + _PASTEBOARD_HEADER.size > len(buffer):
+            return None
+        _, _, promises, echo, uncompressed, compressed = _PASTEBOARD_HEADER.unpack_from(
+            buffer, start
+        )
+        if compressed > MAX_PASTEBOARD or uncompressed > MAX_PASTEBOARD:
+            raise ProtocolError(
+                f"a pasteboard of {compressed} bytes ({uncompressed} inflated),"
+                f" over {MAX_PASTEBOARD}"
+            )
+        begin = start + _PASTEBOARD_HEADER.size
+        end = begin + compressed
+        if end > len(buffer):
+            return None
+        contents = PasteboardContents(
+            bool(promises & 1), echo, uncompressed, bytes(buffer[begin:end])
+        )
+        return contents, end
 
     def _update(self, start: int) -> tuple[FramebufferUpdate, int] | None:
         buffer = self._buffer

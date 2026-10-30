@@ -27,8 +27,9 @@ src/pomona/                   Python
   stream.py    whole server messages out of the decrypted stream
   layout.py    the display layout
   cursor.py    the pointer's shapes
+  pasteboard.py  the pasteboard's archive, as far as text goes
   messages.py  everything sent to the Mac, as bytes
-  window.py    run_window(): a session in a window
+  window.py    run_window(): a session in a window, followed when it drops
   cli.py       the `pomona` command
 crates/pomona-native/         Rust: pomona._native
   canvas.rs    the framebuffer every codec draws on
@@ -37,6 +38,7 @@ crates/pomona-native/         Rust: pomona._native
   picture.rs   Picture, the canvas as Python sees it, and run_window
   window.rs    the window: winit's event loop, wake-ups, the cursor, input
   keys.rs      keys as the Mac reads them
+  clipboard.rs the local pasteboard, text only (arboard)
   grab.rs      the keys Windows would keep, grabbed (Windows only)
   gpu.rs       wgpu: the texture, uploads, drawing
 crates/apple-adaptive/        Rust: zDesk's Adaptive decoder, unchanged
@@ -111,7 +113,8 @@ How it runs:
 - wgpu reports errors to a handler that would panic by default. Pomona's handler keeps
   the first error, and the window ends with a `RuntimeError` instead.
 - The Mac's pointer shapes become the window's cursor.
-- The session closes the window when it ends, and closing the window ends the session.
+- `run_window`, not the session, closes the window when the session ends, so that a
+  window can outlive its session. Closing the window ends the session.
 - When the window says its scale (pixels per point), the session asks a Retina Mac for
   `min(1, client scale / Mac density)` with `SetServerScaling`, as Apple's viewer does,
   so the Mac sends its screen at the client's density.
@@ -145,7 +148,29 @@ the picture's pixels. The session sends them as they come.
   hearing a key while the window is in front.
 - **On macOS** winit's default menu is off, so Command-Q and Command-H reach the Mac.
 
-The pasteboard is next, through `arboard`.
+### The pasteboard
+
+The session speaks the pasteboard's protocol; the window moves text between it and the
+local pasteboard.
+
+- **In the session:** on `MiscStatus` 2 it fetches the Mac's pasteboard, reads the text
+  flavor out of the archive (`pasteboard.py`) and hands it to `on_pasteboard`.
+  `set_pasteboard` sends text the other way. The archive is inflated only as far as the
+  text, because a copied image comes with it.
+- **In the window** (`clipboard.rs`, through `arboard`): the Mac's text goes onto the
+  local pasteboard on the window's thread, woken like the picture. The local text is
+  read when the window gets the focus, not watched, which needs no platform hooks and is
+  when it matters to the Mac. The text last exchanged either way is remembered, because
+  the Mac reports text it was given as its own change and would otherwise echo it.
+
+### Following a dropped session
+
+A window can outlive its session. `Viewer` in `window.py` waits for the session to end
+on a thread of its own. When the connection dropped and the caller gave `reconnect`, it
+signs in again with growing pauses and points the window's events at the new session.
+Otherwise it closes the window. The new session draws on the window's picture after
+restarting its decoders: Adaptive's tables and tile cache and the deflate streams belong
+to one session's stream, and carried over they garbled the next one's picture.
 
 ## Build and version
 
@@ -212,3 +237,7 @@ taking.
     it was told about, and a release of another one would leave it held.
 14. **winit's device events stay off,** because on Windows they bring raw keyboard
     input, which silences the keyboard grab.
+15. **A picture taken over by another session restarts its decoders,** because their
+    state belongs to one session's stream.
+16. **The pasteboard never sends back what it just received,** because the Mac reports
+    the text it was given as a change of its own.

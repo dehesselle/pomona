@@ -4,12 +4,20 @@ This document describes how to use Pomona: the `pomona` command and the Python l
 
 ## Reaching the Mac
 
-Pomona connects to the Mac's Screen Sharing port, 5900, over one TCP connection. Through
-ssh, forward a local port to it:
+Pomona connects to the Mac's Screen Sharing port, 5900, over one TCP connection: to a
+Mac on the network or the internet directly, `pomona mac.example.com -u me`, or through
+ssh, forwarding a local port to it:
 
 ```sh
 ssh -N -L 127.0.0.1:5901:127.0.0.1:5900 user@mac
 ```
+
+The password goes encrypted under a key from a Diffie-Hellman exchange, and the session
+is encrypted after a short cleartext prelude that carries nothing secret
+([protocol.md](protocol.md#connecting-and-signing-in)). The exchange proves neither
+side's identity, though: it keeps the password from anyone listening, not from someone
+who can intercept and relay the connection. Over the open internet, ssh or a VPN closes
+that gap.
 
 The account must be allowed to sign in to Screen Sharing: on the Remote Management list
 with at least Observe and Control. See [OPERATIONS.md](OPERATIONS.md#troubleshooting).
@@ -18,7 +26,7 @@ with at least Observe and Control. See [OPERATIONS.md](OPERATIONS.md#troubleshoo
 
 ```text
 pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--quality adaptive|full]
-       [--push-interval US] [--ctrl-as-command] [-v]
+       [--push-interval US] [--ctrl-as-command] [--no-pasteboard] [-v]
 ```
 
 | Option | |
@@ -29,17 +37,27 @@ pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--quality adaptive|ful
 | `--quality` | `adaptive` (the default): Apple's tiles, coarse first and refined after; `full`: lossless zlib, about ten times the traffic |
 | `--push-interval US` | pace the Mac's updates, in microseconds; 0 (the default) is as fast as it captures |
 | `--ctrl-as-command` | send Control as Command and the Windows key as Control, so Ctrl-C copies on the Mac |
+| `--no-pasteboard` | share no text between your pasteboard and the Mac's |
 | `-v`, `-vv` | log more, to stderr |
 | `--version` | print the version |
 
-The password comes from the environment variable `POMONA_PASSWORD`, or is asked for
-without echo. Pomona never takes it from the command line, and does not read it from a
-pipe on stdin.
+The password comes from the environment variable `POMONA_PASSWORD`, or is asked for in
+the terminal, without echo. Pomona never takes it from the command line, and does not
+read it from a pipe on stdin. It keeps it in memory while the window is open, to sign
+in again after a dropped connection.
 
 Without `--probe`, Pomona opens a window showing the Mac's screen, scaled to fit the
-window and keeping its aspect. Closing the window ends the session, and the session
-ending closes the window. With `-v` it logs, at the end, the updates received and the
-frames drawn.
+window and keeping its aspect. Closing the window ends the session. With `-v` it logs,
+at the end, the updates received and the frames drawn.
+
+When the connection drops, the window stays and Pomona signs in again, after 1, 2, 5,
+10, 20 and then every 30 seconds, logging each attempt, until it is back, the Mac
+refuses the sign-in, or you close the window. When the Mac's user ends the session, the
+window closes.
+
+Text you copy on the Mac lands on your pasteboard. Text you copy here goes to the Mac
+when the window gets the focus, so it is there to paste. Only text is shared, and
+`--no-pasteboard` shares none.
 
 Keys, clicks and the mouse wheel in the window go to the Mac:
 
@@ -82,11 +100,13 @@ with connect("127.0.0.1", 5901, user="me", password=password) as session:
 
 ```python
 connect(host, port=5900, *, user, password, quality="adaptive",
-        push_interval_us=0, timeout=15.0, on_update=None) -> Session
+        push_interval_us=0, timeout=15.0, on_update=None, on_pasteboard=None,
+        picture=None) -> Session
 ```
 
 Signs in and starts a Standard session. `quality` is `"adaptive"` or `"full"`. `timeout`
-covers the connection and the handshake. It raises:
+covers the connection and the handshake. `picture` draws the session on an existing
+picture, such as a window's when signing in again. It raises:
 
 - `AuthenticationError` when the Mac refuses the sign-in, which is a wrong user name or
   password, or an account without Remote Management permission: the Mac does not say
@@ -94,7 +114,8 @@ covers the connection and the handshake. It raises:
 - `ProtocolError` when the server does not speak as a Mac.
 - `OSError` for the connection itself, including timeouts.
 
-All of Pomona's own errors derive from `PomonaError`.
+All of Pomona's own errors derive from `PomonaError`. A session's `error` can also be
+`EndedAtMacError`, when the Mac's user ended the session.
 
 ### `Session`
 
@@ -105,8 +126,12 @@ All of Pomona's own errors derive from `PomonaError`.
 | `layout` | the Mac's last display layout, or None before the first |
 | `cursor` | the pointer's shape: `width`, `height`, `hotspot`, `rgba`; None until the Mac sends one |
 | `cursor_position` | where the Mac last put the pointer, or None |
+| `pasteboard` | the text last on the Mac's pasteboard as far as the session knows, or None |
+| `keyboard_source` | the Mac's keyboard: `layout` (such as `com.apple.keylayout.US`) and `secure`, true while a password field has the focus; None until the Mac says |
 | `bytes_received` | bytes read off the connection so far |
 | `on_update` | called with each `stream.FramebufferUpdate` once it is drawn |
+| `on_pasteboard` | called with the text of the Mac's pasteboard each time it changes |
+| `set_pasteboard(text)` | put text on the Mac's pasteboard; empty text clears it |
 | `closed`, `wait(timeout)` | whether the session has ended; wait for it to end |
 | `error` | why it ended, if not by `close()` |
 | `close()` | end it, after sending the input already queued |
@@ -114,8 +139,9 @@ All of Pomona's own errors derive from `PomonaError`.
 | `pointer(x, y, buttons)` | move the pointer with `LEFT`, `MIDDLE`, `RIGHT` held |
 | `scroll(dx, dy, x, y)` | scroll by points, positive right and down |
 
-- `on_update` runs on the session's reader thread. Keep it short: while it runs, nothing
-  is read from the Mac, and the Mac then stops reading input.
+- `on_update` and `on_pasteboard` run on the session's reader thread. Keep them short:
+  while they run, nothing is read from the Mac, and the Mac then stops reading input.
+- The Mac reports text you gave it with `set_pasteboard` back as a change of its own.
 - Positions are framebuffer pixels. The session converts them for a Mac that scales
   its framebuffer, and swaps right and middle buttons the way the Mac expects.
 - Keysyms go out as given, and the Mac reads them its own way
@@ -136,10 +162,29 @@ session = connect("127.0.0.1", 5901, user="me", password=password)
 run_window(session, title="My Mac")  # returns when the window closes
 ```
 
-`run_window(session, *, title=None, ctrl_as_command=False)` shows the session's screen
-in a window until the window is closed or the session ends, and then closes the
-session. Keys, clicks and scrolling in the window go to the Mac as the command
-describes; `ctrl_as_command` is `--ctrl-as-command`.
+```python
+run_window(session, *, title=None, ctrl_as_command=False, pasteboard=True,
+           reconnect=None) -> Session
+```
+
+Shows the session's screen in a window until the window is closed or the session ends,
+and then closes the session. Keys, clicks, scrolling and the pasteboard work as the
+command describes; `ctrl_as_command` is `--ctrl-as-command`, and `pasteboard=False` is
+`--no-pasteboard`.
+
+With `reconnect`, a session whose connection dropped is followed by another:
+`reconnect(picture)` signs in again and returns a session drawing on the window's
+picture, as `connect(..., picture=picture)` does. It is retried as the command
+describes. `run_window` returns the last session, which is `session` unless it was
+followed:
+
+```python
+def sign_in(picture=None):
+    return connect("mac.example.com", user="me", password=password, picture=picture)
+
+
+session = run_window(sign_in(), reconnect=sign_in)
+```
 
 - It runs on the calling thread, which on macOS must be the main thread. The session's
   own threads go on meanwhile; `on_update` still runs on the reader thread.

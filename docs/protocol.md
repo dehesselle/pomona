@@ -224,6 +224,10 @@ A NoMac session's first updates were the layout, the vendor keysyms, the keyboar
 source, the quantization tables and then the first picture, each an update of its own
 **[measured]**.
 
+The keyboard source's body is a `u16` version, a `u32` flag that is 1 while a secure
+text field such as a password prompt has the focus, a `u16` length and the Mac's
+keyboard layout as UTF-8, such as `com.apple.keylayout.US`.
+
 | MiscStatus command | Sent when |
 | --- | --- |
 | 1 | the Mac's user ends the session, just before it closes |
@@ -374,6 +378,16 @@ changes, and 3 when it needs data for a flavor the viewer promised.
   flavor is a counted name, a reserved `u32`, a `u32` count of counted key/value tags,
   and counted data, every count a `u32`. A flavor without data is a promise; an empty
   archive clears the pasteboard.
+- **Each pasteboard is a zlib stream of its own**, sync-flushed and left open, unlike
+  the picture's streams, which last the session.
+- **Text** is the flavor `public.utf8-plain-text`. Pomona sends text as one item with
+  that one flavor, and empty text as an item with no flavors: a text flavor without data
+  would be a promise, and a paste on the Mac would wait for it.
+
+Measured on macOS 26.6: `pbcopy` on the Mac brought `MiscStatus` 2, and the fetch
+brought the text, `äöü € ✓` intact. Text Pomona sent was on the Mac's
+pasteboard for `pbpaste` at once. `AutoPasteboard` in the prelude was all it took, also
+after a layout.
 
 ## Not yet known
 

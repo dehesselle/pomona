@@ -69,7 +69,9 @@ apart from them, after every update.
 sign-in, ServerInit, the prelude and the rekey, then replays a stream through the record
 layer in records of uneven sizes and keeps what the client sent. Its record layer is
 written apart from `pomona.record`, so a mistake made the same way on both sides still
-fails. `tests/test_session.py` runs whole sessions against it.
+fails. It answers a pasteboard fetch with an archive the test gives it.
+`tests/test_session.py`, `test_pasteboard.py` and `test_window.py` (reconnecting,
+without a window) run whole sessions against it.
 
 A live test against a NoMac Mac is the only check of what the fake cannot know. Through
 an ssh forward to the Mac's port 5900:

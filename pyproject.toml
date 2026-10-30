@@ -26,6 +26,8 @@ manifest-path = "crates/pomona-native/Cargo.toml"
 python-source = "src"
 module-name = "pomona._native"
 features = ["pyo3/extension-module"]
+# Bytecode a test run left in the source tree has no place in a wheel.
+exclude = ["**/__pycache__/**"]
 
 [tool.uv]
 # Rebuild the extension on `uv sync`/`uv run` when the Rust side changes.

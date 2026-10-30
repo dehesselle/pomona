@@ -48,13 +48,40 @@ of an interval is that a moving window arrives in strips captured at different m
   while switching away would otherwise stay down on the Mac.
 - **A wheel notch** scrolls 40 points, three lines in TextEdit.
 
+## The pasteboard
+
+- **From the Mac:** the Mac says when its pasteboard changes, and Pomona fetches it at
+  once. The Mac sends every flavor of everything copied, so copying an image sends
+  megabytes even though only text is kept; Pomona inflates only as far as the text.
+- **To the Mac:** the local pasteboard is read when the window gets the focus, and sent
+  if it changed. Text copied locally while the window is in front goes over the next
+  time it gets the focus.
+- **No echo:** the Mac reports text it was given as its own change. Pomona remembers the
+  text last exchanged either way and does not send it back.
+- **Only text.** Images, files and rich text stay where they were copied.
+
+## Reconnecting
+
+When the connection drops while a window is open, the window keeps the last picture and
+the command signs in again: after 1, 2, 5, 10 and 20 seconds, then every 30, each
+attempt logged as a warning. The new session draws on the same window, its decoders
+started afresh; a decoder carrying the old session's state garbled the picture.
+Reconnecting stops when the Mac refuses the sign-in or the window is closed. A session
+the Mac's user ended is not followed.
+
 ## How a session ends
 
 - **`close()`** sends what was already queued, then hangs up. `error` stays None.
   Closing the window does the same.
-- **The Mac hangs up**, for example when its user ends the session: `error` says the Mac
-  closed the connection.
-- **The connection fails**: `error` holds the `OSError`.
+- **The Mac's user ends the session:** the Mac says so (`MiscStatus` 1) and hangs up;
+  `error` is an `EndedAtMacError`, and the window closes.
+- **The Mac hangs up** otherwise: `error` says the Mac closed the connection. With a
+  window, the command reconnects.
+- **A user logs in or out at the Mac** (`MiscStatus` 17, logged): the Mac either moves
+  the session to the new user's screen, which arrives as a layout and is armed again,
+  or closes the connection, and the command reconnects.
+- **The connection fails**: `error` holds the `OSError`. With a window, the command
+  reconnects.
 - **The stream cannot be read**: an unknown message, an unknown encoding, a record that
   fails its integrity check, or a second rekey end the session with a `ProtocolError`,
   because nothing after them can be trusted.

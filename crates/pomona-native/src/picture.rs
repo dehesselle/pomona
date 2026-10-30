@@ -32,6 +32,8 @@ pub struct Shared {
     canvas: Mutex<Canvas>,
     pub waker: Waker,
     pub cursor: Mutex<Option<CursorImage>>,
+    /// Text from the Mac's pasteboard, for the window to put on the local one.
+    pub pasteboard: Mutex<Option<String>>,
     /// Frames the window has shown.
     pub frames: AtomicU64,
 }
@@ -60,6 +62,7 @@ impl Picture {
                 waker: Waker::default(),
                 frames: AtomicU64::new(0),
                 cursor: Mutex::new(None),
+                pasteboard: Mutex::new(None),
             }),
         }
     }
@@ -78,6 +81,12 @@ impl Picture {
     fn resize(&self, width: usize, height: usize) {
         self.shared.canvas().resize(width, height);
         self.shared.waker.picture();
+    }
+
+    /// Ready the picture for another session's stream: the decoders start
+    /// afresh, and the pixels stay until the new stream paints over them.
+    fn restart(&self) {
+        self.shared.canvas().restart();
     }
 
     /// Decode one rectangle onto the framebuffer and return whether it drew.
@@ -124,6 +133,12 @@ impl Picture {
         Ok(())
     }
 
+    /// Text from the Mac's pasteboard, for a window to put on the local one.
+    fn set_pasteboard(&self, text: String) {
+        *self.shared.pasteboard.lock().unwrap_or_else(|p| p.into_inner()) = Some(text);
+        self.shared.waker.pasteboard();
+    }
+
     /// How many frames a window has shown of this picture.
     #[getter]
     fn frames(&self) -> u64 {
@@ -139,19 +154,29 @@ impl Picture {
 /// Show `picture` in a window until it is closed or `picture.quit()` is
 /// called. `on_event(kind, *args)` hears about the window, `("opened",
 /// adapter, scale)` and `("scale", scale)`, and its input: `("key", keysym,
-/// down)`, `("pointer", x, y, buttons)` and `("scroll", dx, dy, x, y)`. With
-/// `ctrl_as_command`, Control goes out as Command and the Windows key as
-/// Control. Runs on the calling thread, which on macOS must be the main
+/// down)`, `("pointer", x, y, buttons)`, `("scroll", dx, dy, x, y)` and, when
+/// the window gets the focus with new text on the local pasteboard,
+/// `("pasteboard", text)`.
+///
+/// With `ctrl_as_command`, Control goes out as Command and the Windows key as
+/// Control. Without `pasteboard`, the window neither reads nor writes the local
+/// pasteboard. Runs on the calling thread, which on macOS must be the main
 /// thread; a process can run one event loop only.
 #[pyfunction]
-#[pyo3(signature = (picture, on_event, title = "Pomona".to_owned(), ctrl_as_command = false))]
+#[pyo3(signature = (picture, on_event, title = "Pomona".to_owned(), ctrl_as_command = false, pasteboard = true))]
 pub fn run_window(
     py: Python<'_>,
     picture: &Picture,
     on_event: Py<PyAny>,
     title: String,
     ctrl_as_command: bool,
+    pasteboard: bool,
 ) -> PyResult<()> {
     let shared = picture.shared.clone();
-    py.detach(|| window::run(shared, on_event, title, ctrl_as_command))
+    let options = window::Options {
+        title,
+        ctrl_as_command,
+        pasteboard,
+    };
+    py.detach(|| window::run(shared, on_event, options))
 }

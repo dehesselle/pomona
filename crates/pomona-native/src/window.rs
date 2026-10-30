@@ -32,6 +32,7 @@ use winit::keyboard::PhysicalKey;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{CustomCursor, Window, WindowId};
 
+use crate::clipboard::Pasteboard;
 use crate::gpu::{Frame, Gpu};
 use crate::keys::{KeyInput, Keyboard, Press};
 use crate::picture::Shared;
@@ -48,6 +49,8 @@ pub enum Wake {
     Cursor,
     /// The session is over.
     Quit,
+    /// The Mac's pasteboard has new text.
+    Pasteboard,
     /// Keys were grabbed from the system.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     Keys,
@@ -70,6 +73,10 @@ impl Waker {
 
     pub fn cursor(&self) {
         self.send(Wake::Cursor);
+    }
+
+    pub fn pasteboard(&self) {
+        self.send(Wake::Pasteboard);
     }
 
     pub fn quit(&self) {
@@ -97,10 +104,17 @@ pub struct CursorImage {
     pub rgba: Vec<u8>,
 }
 
+/// How a window behaves.
+pub struct Options {
+    pub title: String,
+    /// Send Control as Command and the Windows key as Control.
+    pub ctrl_as_command: bool,
+    /// Share the local pasteboard with the Mac.
+    pub pasteboard: bool,
+}
+
 /// Open a window on `shared` and run until it is closed or the session quits.
-/// With `ctrl_as_command`, Control goes out as Command and the Windows key as
-/// Control.
-pub fn run(shared: Arc<Shared>, on_event: Py<PyAny>, title: String, ctrl_as_command: bool) -> PyResult<()> {
+pub fn run(shared: Arc<Shared>, on_event: Py<PyAny>, options: Options) -> PyResult<()> {
     let mut builder = EventLoop::<Wake>::with_user_event();
     #[cfg(target_os = "windows")]
     {
@@ -127,13 +141,14 @@ pub fn run(shared: Arc<Shared>, on_event: Py<PyAny>, title: String, ctrl_as_comm
     let mut app = App {
         shared: shared.clone(),
         on_event,
-        title,
+        title: options.title,
         #[cfg(target_os = "windows")]
         proxy: event_loop.create_proxy(),
         gpu: None,
         cursor: None,
         error: None,
-        keyboard: Keyboard::new(ctrl_as_command),
+        keyboard: Keyboard::new(options.ctrl_as_command),
+        pasteboard: options.pasteboard.then(Pasteboard::default),
         pointer: Pointer::default(),
         #[cfg(target_os = "windows")]
         grab: None,
@@ -176,6 +191,8 @@ struct App {
     cursor: Option<CustomCursor>,
     error: Option<PyErr>,
     keyboard: Keyboard,
+    /// None when the pasteboard is not shared.
+    pasteboard: Option<Pasteboard>,
     pointer: Pointer,
     #[cfg(target_os = "windows")]
     grab: Option<crate::grab::Hook>,
@@ -420,6 +437,12 @@ impl ApplicationHandler<Wake> for App {
             Wake::Quit => event_loop.exit(),
             // Taken once the events winit has are through.
             Wake::Keys => {}
+            Wake::Pasteboard => {
+                let text = self.shared.pasteboard.lock().unwrap_or_else(|p| p.into_inner()).take();
+                if let (Some(pasteboard), Some(text)) = (&mut self.pasteboard, text) {
+                    pasteboard.mac_copied(text);
+                }
+            }
         }
     }
 
@@ -449,6 +472,11 @@ impl ApplicationHandler<Wake> for App {
             } => {
                 self.grabbed_keys(event_loop);
                 self.keyboard_input(event_loop, &event);
+            }
+            WindowEvent::Focused(true) => {
+                if let Some(text) = self.pasteboard.as_mut().and_then(Pasteboard::copied_here) {
+                    self.tell(event_loop, |py, f| f.call1(py, ("pasteboard", text)));
+                }
             }
             WindowEvent::Focused(false) => {
                 self.grabbed_keys(event_loop);

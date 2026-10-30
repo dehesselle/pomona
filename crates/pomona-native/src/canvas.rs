@@ -123,6 +123,16 @@ impl Canvas {
         };
     }
 
+    /// Forget what a session's stream left in the decoders, for the next
+    /// session: its stream starts afresh. The pixels stay until it paints over
+    /// them.
+    pub fn restart(&mut self) {
+        self.adaptive = Decoder::new();
+        self.adaptive.resize(self.width, self.height);
+        self.zlib = Stream::new();
+        self.zrle = Stream::new();
+    }
+
     pub fn width(&self) -> usize {
         self.width
     }
@@ -314,6 +324,19 @@ mod tests {
         let mut canvas = Canvas::new(2, 2);
         canvas.decode(ZLIB, 0, 0, 2, 2, &pieces[0]).unwrap();
         canvas.decode(ZLIB, 0, 1, 2, 1, &pieces[1]).unwrap();
+        assert_eq!(canvas.pixels(), &[RED, RED, GREEN, GREEN]);
+    }
+
+    #[test]
+    fn a_restart_takes_a_new_stream_and_keeps_the_pixels() {
+        let red = [0u8, 0, 255, 0].repeat(4);
+        let green = [0u8, 255, 0, 0].repeat(2);
+        let mut canvas = Canvas::new(2, 2);
+        canvas.decode(ZLIB, 0, 0, 2, 2, &deflate_pieces(&[&red])[0]).unwrap();
+        canvas.restart();
+        assert_eq!(canvas.pixels(), &[RED; 4]);
+        // The next session's stream begins with its own zlib header.
+        canvas.decode(ZLIB, 0, 1, 2, 1, &deflate_pieces(&[&green])[0]).unwrap();
         assert_eq!(canvas.pixels(), &[RED, RED, GREEN, GREEN]);
     }
 

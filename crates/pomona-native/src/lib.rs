@@ -6,6 +6,7 @@
 //! window.
 
 pub mod canvas;
+mod clipboard;
 mod gpu;
 #[cfg(target_os = "windows")]
 mod grab;

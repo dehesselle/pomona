@@ -14,19 +14,25 @@ and with the writer it never does.
 Standard mode is armed as Apple's viewer arms it: once the first display layout
 arrives, the Mac pushes every change unasked (AutoFrameBufferUpdate), and it
 is armed again after every layout, which drops the arming.
+
+The Mac says when its pasteboard changes (MiscStatus 2); the session then
+fetches it, and hands its text to `on_pasteboard`.
 """
 
+import itertools
 import logging
 import queue
 import socket
+import struct
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Self
 
-from pomona import connection, layout, messages, stream
+from pomona import connection, layout, messages, pasteboard, stream
 from pomona._native import Picture, StreamError
 from pomona.cursor import Cursor, CursorCache
-from pomona.errors import PomonaError, ProtocolError
+from pomona.errors import EndedAtMacError, PomonaError, ProtocolError
 from pomona.record import RecordReader, RecordWriter
 
 log = logging.getLogger(__name__)
@@ -43,6 +49,20 @@ _PICTURE_ENCODINGS = frozenset({stream.ADAPTIVE, stream.ZLIB, stream.ZRLE, strea
 _STREAM_ENCODINGS = frozenset({stream.ZLIB, stream.ZRLE})
 _WHEEL_UP = 0x08
 _WHEEL_DOWN = 0x10
+# MiscStatus commands acted on.
+_USER_ENDED = 1
+_PASTEBOARD_CHANGED = 2
+_USER_SESSION_CHANGED = 17
+_KEYBOARD_SOURCE = struct.Struct(">HIH")
+
+
+@dataclass(frozen=True, slots=True)
+class KeyboardSource:
+    """The Mac's keyboard layout, such as `com.apple.keylayout.ABC`, and
+    whether a secure text field, such as a password prompt, has the focus."""
+
+    layout: str
+    secure: bool
 
 
 class Session:
@@ -51,8 +71,12 @@ class Session:
 
     `picture` is the framebuffer, `layout` the Mac's last display layout,
     `cursor` the pointer's shape and `cursor_position` where the Mac last put
-    it. `on_update`, if set, is called on the reader thread with each
-    `stream.FramebufferUpdate` once it is drawn; keep it short.
+    it. `pasteboard` is the text last on the Mac's pasteboard, as far as the
+    session knows, and `keyboard_source` the Mac's keyboard layout.
+
+    `on_update`, if set, is called on the reader thread with each
+    `stream.FramebufferUpdate` once it is drawn, and `on_pasteboard` with the
+    text of the Mac's pasteboard each time it changes; keep them short.
     """
 
     def __init__(
@@ -64,13 +88,26 @@ class Session:
         quality: str,
         push_interval_us: int,
         on_update: Callable[[stream.FramebufferUpdate], None] | None,
+        on_pasteboard: Callable[[str], None] | None = None,
+        picture: Picture | None = None,
     ) -> None:
         self.server = server
-        self.picture = Picture(server.width, server.height)
+        if picture is None:
+            picture = Picture(server.width, server.height)
+        else:
+            # What another session's stream left in the decoders would
+            # garble this one's.
+            picture.restart()
+            if (picture.width, picture.height) != (server.width, server.height):
+                picture.resize(server.width, server.height)
+        self.picture = picture
         self.layout: layout.Layout | None = None
         self.cursor: Cursor | None = None
         self.cursor_position: tuple[int, int] | None = None
+        self.pasteboard: str | None = None
+        self.keyboard_source: KeyboardSource | None = None
         self.on_update = on_update
+        self.on_pasteboard = on_pasteboard
         self.bytes_received = 0
         # Why the session ended, if it did not end by `close`.
         self.error: BaseException | None = None
@@ -87,6 +124,8 @@ class Session:
         self._outbox: queue.SimpleQueue[bytes | None] = queue.SimpleQueue()
         self._closed = threading.Event()
         self._closing = threading.Lock()
+        self._fetches = itertools.count(1)
+        self._user_ended = False
 
         # The pixel format and encodings go first, inside the record layer: a
         # list sent in cleartext got no Adaptive picture at all.
@@ -120,7 +159,6 @@ class Session:
             self._closed.set()
         if ending:
             self._outbox.put(None)
-        self.picture.quit()
         reader, writer = self._threads
         if writer is not threading.current_thread():
             # The writer stops at the end of the queue; a Mac that reads
@@ -159,6 +197,16 @@ class Session:
             pulse = _WHEEL_DOWN if dy > 0 else _WHEEL_UP
             self._send(messages.pointer_event(pulse, x, y))
             self._send(messages.pointer_event(0, x, y))
+
+    def set_pasteboard(self, text: str) -> None:
+        """Put `text` on the Mac's pasteboard; empty text clears it."""
+        message = messages.set_pasteboard(text)
+        if len(message) > stream.MAX_PASTEBOARD:
+            # The Mac would close the connection.
+            log.warning("%d bytes of text are too many for the Mac", len(text))
+            return
+        self.pasteboard = text
+        self._send(message)
 
     def set_client_scale(self, scale: float) -> None:
         """Tell the session the client's pixels per point, so that a Retina
@@ -207,17 +255,23 @@ class Session:
                 for message in self._parser.feed(self._records_in.feed(data)):
                     self._handle(message)
             if not self._closed.is_set():
-                self.error = PomonaError("the Mac closed the connection")
+                self.error = self._ended(None)
         except OSError as error:
             # Closing the socket is how `close` stops this thread.
             if not self._closed.is_set():
-                self.error = error
+                self.error = self._ended(error)
         # Whatever stops the reader, the caller's on_update included, ends the
         # session, and the caller finds out why here rather than on stderr.
         except Exception as error:  # noqa: BLE001
             self.error = error
         finally:
             self._shut_down()
+
+    def _ended(self, error: OSError | None) -> BaseException:
+        """Why the Mac's end of the connection went away."""
+        if self._user_ended:
+            return EndedAtMacError("the Mac's user ended the session")
+        return error or PomonaError("the Mac closed the connection")
 
     def _write(self) -> None:
         try:
@@ -230,8 +284,14 @@ class Session:
             self._shut_down()
 
     def _handle(self, message: stream.Message) -> None:
+        if isinstance(message, stream.MiscStatus):
+            self._misc_status(message.command)
+            return
+        if isinstance(message, stream.PasteboardContents):
+            self._apply_pasteboard(message)
+            return
         if not isinstance(message, stream.FramebufferUpdate):
-            # MiscStatus, Bell and the pasteboard: later.
+            # A bell, or an RFB cut text the Mac does not send.
             return
         rearm = False
         for rect in message.rects:
@@ -262,6 +322,8 @@ class Session:
                 self._apply_cursor(rect)
             elif rect.encoding == stream.CURSOR_POS:
                 self.cursor_position = (rect.x, rect.y)
+            elif rect.encoding == stream.KEYBOARD_SOURCE:
+                self._apply_keyboard_source(rect.body)
             elif rect.encoding == stream.REKEY:
                 # Records already framed under the old key would fail the
                 # Mac's check, so a rekey cannot be followed.
@@ -272,6 +334,48 @@ class Session:
             self._arm()
         if self.on_update is not None:
             self.on_update(message)
+
+    def _misc_status(self, command: int | None) -> None:
+        if command == _PASTEBOARD_CHANGED:
+            self._send(messages.fetch_pasteboard(next(self._fetches)))
+        elif command == _USER_ENDED:
+            # The Mac closes the connection next.
+            log.info("the Mac's user ended the session")
+            self._user_ended = True
+        elif command == _USER_SESSION_CHANGED:
+            # A login moves the session to the new user's screen, which comes
+            # as a layout, or the Mac closes the connection.
+            log.info("a user logged in or out at the Mac")
+
+    def _apply_pasteboard(self, contents: stream.PasteboardContents) -> None:
+        try:
+            text = pasteboard.text(contents.compressed, contents.uncompressed)
+        except ProtocolError as error:
+            # Each pasteboard is a zlib stream of its own: nothing after it
+            # depends on this one.
+            log.warning("%s", error)
+            return
+        if text is None:
+            log.info("the Mac's pasteboard holds no text")
+            return
+        self.pasteboard = text
+        if self.on_pasteboard is not None:
+            self.on_pasteboard(text)
+
+    def _apply_keyboard_source(self, body: bytes) -> None:
+        # u16 version, u32 secure flag, u16 length, the layout's name
+        if len(body) < _KEYBOARD_SOURCE.size:
+            return
+        _, secure, length = _KEYBOARD_SOURCE.unpack_from(body)
+        name = body[_KEYBOARD_SOURCE.size : _KEYBOARD_SOURCE.size + length]
+        source = KeyboardSource(name.decode(errors="replace"), bool(secure & 1))
+        if source != self.keyboard_source:
+            log.info(
+                "the Mac's keyboard: %s%s",
+                source.layout,
+                ", in a secure text field" if source.secure else "",
+            )
+            self.keyboard_source = source
 
     def _apply_cursor(self, rect: stream.Rect) -> None:
         try:
@@ -315,7 +419,6 @@ class Session:
                 return
             self._closed.set()
         self._outbox.put(None)
-        self.picture.quit()
         self._hang_up()
 
     def _hang_up(self) -> None:
@@ -336,13 +439,17 @@ def connect(
     push_interval_us: int = 0,
     timeout: float = 15.0,
     on_update: Callable[[stream.FramebufferUpdate], None] | None = None,
+    on_pasteboard: Callable[[str], None] | None = None,
+    picture: Picture | None = None,
 ) -> Session:
     """Sign in to a Mac's Screen Sharing and start a Standard session.
 
     `push_interval_us` paces the Mac's pushed updates: 0, as Apple's viewer
     asks, is as fast as the Mac captures; 33,333 is about 30 a second.
-    Raises AuthenticationError for a refused sign-in, ProtocolError for a
-    server that does not speak as a Mac, and OSError for the connection.
+    `picture` draws the session on an existing picture, a window's when
+    reconnecting. Raises AuthenticationError for a refused sign-in,
+    ProtocolError for a server that does not speak as a Mac, and OSError for
+    the connection.
     """
     if quality not in QUALITIES:
         raise ValueError(f"unknown quality {quality!r}; known: {', '.join(QUALITIES)}")
@@ -359,6 +466,8 @@ def connect(
             quality=quality,
             push_interval_us=push_interval_us,
             on_update=on_update,
+            on_pasteboard=on_pasteboard,
+            picture=picture,
         )
     except BaseException:
         sock.close()

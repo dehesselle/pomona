@@ -18,12 +18,18 @@ from importlib.metadata import version
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pomona.errors import AuthenticationError, PomonaError, ProtocolError
+    from pomona.errors import (
+        AuthenticationError,
+        EndedAtMacError,
+        PomonaError,
+        ProtocolError,
+    )
     from pomona.session import Session, connect
     from pomona.window import run_window
 
 __all__ = [
     "AuthenticationError",
+    "EndedAtMacError",
     "PomonaError",
     "ProtocolError",
     "Session",
@@ -35,6 +41,7 @@ _LAZY = {
     "connect": "pomona.session",
     "Session": "pomona.session",
     "AuthenticationError": "pomona.errors",
+    "EndedAtMacError": "pomona.errors",
     "PomonaError": "pomona.errors",
     "ProtocolError": "pomona.errors",
     "run_window": "pomona.window",
@@ -89,6 +96,11 @@ def main(argv: list[str] | None = None) -> None:
         "--ctrl-as-command",
         action="store_true",
         help="send Control as Command and the Windows key as Control",
+    )
+    parser.add_argument(
+        "--no-pasteboard",
+        action="store_true",
+        help="share no text between the local pasteboard and the Mac's",
     )
     parser.add_argument("-v", "--verbose", action="count", default=0)
     args = parser.parse_args(argv)

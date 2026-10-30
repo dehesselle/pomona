@@ -19,3 +19,7 @@ class AuthenticationError(PomonaError):
     It says no more than that: a wrong password and an account without
     Remote Management permission look the same.
     """
+
+
+class EndedAtMacError(PomonaError):
+    """The Mac's user ended the session."""

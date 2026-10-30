@@ -16,6 +16,7 @@ import secrets
 import socket
 import struct
 import threading
+import zlib
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
@@ -86,7 +87,8 @@ class FakeMac:
     records as they do from a Mac. What the client sent after the rekey is in
     `received`, and an assertion that failed in the thread is in `failure`.
     With `hang_up`, it closes the connection once the stream is out; otherwise
-    it waits for the client until `idle` seconds pass without a message.
+    it waits for the client until `idle` seconds pass without a message, and
+    answers a pasteboard fetch with `pasteboard`, an uncompressed archive.
     """
 
     def __init__(
@@ -100,6 +102,7 @@ class FakeMac:
         commands: bytes = COMMANDS,
         hang_up: bool = False,
         idle: float = 5.0,
+        pasteboard: bytes = b"        idle: float = 5.0,        idle: float = 5.0,        idle: float = 5.0,        idle: float = 5.0,",
     ) -> None:
         self.stream = stream
         self.user, self.password = user, password
@@ -108,6 +111,7 @@ class FakeMac:
         self.commands = commands
         self.hang_up = hang_up
         self.idle = idle
+        self.pasteboard = pasteboard
         self.received: list[bytes] = []
         self.failure: BaseException | None = None
         self.signed_in = threading.Event()
@@ -196,6 +200,21 @@ class FakeMac:
         conn.settimeout(self.idle)
         try:
             while True:
-                self.received.append(inbound.open(conn))
+                message = inbound.open(conn)
+                self.received.append(message)
+                if message[0] == 0x0B:
+                    conn.sendall(outbound.seal(self._pasteboard(message[4:8])))
         except (EOFError, ConnectionError):
             pass
+
+    def _pasteboard(self, echo: bytes) -> bytes:
+        compressor = zlib.compressobj(9)
+        packed = compressor.compress(self.pasteboard) + compressor.flush(
+            zlib.Z_SYNC_FLUSH
+        )
+        return (
+            struct.pack(">BxBx", 0x1F, 0)
+            + echo
+            + struct.pack(">II", len(self.pasteboard), len(packed))
+            + packed
+        )

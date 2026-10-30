@@ -14,7 +14,7 @@ import time
 
 from pomona import stream
 from pomona.errors import PomonaError
-from pomona.session import connect
+from pomona.session import Session, connect
 
 _PICTURE = (stream.ADAPTIVE, stream.ZLIB, stream.ZRLE, stream.RAW)
 
@@ -51,6 +51,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def _window(host: str, port: int, password: str, args: argparse.Namespace) -> int:
+    from pomona._native import Picture
     from pomona.window import run_window
 
     updates = 0
@@ -59,18 +60,28 @@ def _window(host: str, port: int, password: str, args: argparse.Namespace) -> in
         nonlocal updates
         updates += 1
 
-    session = connect(
-        host,
-        port,
-        user=args.user,
-        password=password,
-        quality=args.quality,
-        push_interval_us=args.push_interval,
-        on_update=count,
-    )
+    def sign_in(picture: Picture | None = None) -> Session:
+        # The password stays in memory for as long as the window may have to
+        # sign in again.
+        return connect(
+            host,
+            port,
+            user=args.user,
+            password=password,
+            quality=args.quality,
+            push_interval_us=args.push_interval,
+            on_update=count,
+            picture=picture,
+        )
+
+    session = sign_in()
     start = time.monotonic()
-    run_window(
-        session, title=f"{args.user} at {host}", ctrl_as_command=args.ctrl_as_command
+    session = run_window(
+        session,
+        title=f"{args.user} at {host}",
+        ctrl_as_command=args.ctrl_as_command,
+        pasteboard=not args.no_pasteboard,
+        reconnect=sign_in,
     )
     elapsed = time.monotonic() - start
     logging.getLogger(__name__).info(

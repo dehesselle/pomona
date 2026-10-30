@@ -14,8 +14,8 @@ import pytest
 from test_adaptive_replay import CHECKPOINTS
 
 from pomona import messages, stream
-from pomona.errors import AuthenticationError
-from pomona.session import LEFT, MIDDLE, RIGHT, connect
+from pomona.errors import AuthenticationError, EndedAtMacError
+from pomona.session import LEFT, MIDDLE, RIGHT, KeyboardSource, connect
 
 FIXTURE = (Path(__file__).parent / "fixtures" / "adaptive.rfb").read_bytes()
 UPDATES = sum(
@@ -175,3 +175,31 @@ def test_a_retina_mac_is_asked_once_to_scale_to_the_client():
         messages.framebuffer_update_request(False, 0, 0, 2880, 1800),
         messages.set_server_scaling(0.625),
     ]
+
+
+def test_a_session_the_mac_s_user_ends_says_so():
+    mac = fakemac.FakeMac(bytes.fromhex("1400000400010001"), hang_up=True)
+    session = connect_to(mac)
+    assert session.wait(10)
+    assert isinstance(session.error, EndedAtMacError)
+    session.close()
+    mac.join()
+
+
+def test_the_mac_s_keyboard_source_is_kept():
+    name = b"com.apple.keylayout.German"
+    body = struct.pack(">HIH", 1, 1, len(name)) + name
+    update = (
+        struct.pack(">BxH", 0, 1)
+        + struct.pack(">HHHHi", 0, 0, 0, 0, stream.KEYBOARD_SOURCE)
+        + struct.pack(">H", len(body))
+        + body
+    )
+    mac = fakemac.FakeMac(update)
+    with connect_to(mac) as session:
+        for _ in range(100):
+            if session.keyboard_source is not None:
+                break
+            threading.Event().wait(0.05)
+    mac.join()
+    assert session.keyboard_source == KeyboardSource("com.apple.keylayout.German", True)

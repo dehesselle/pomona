@@ -11,7 +11,7 @@ measurement wins.
 
 import struct
 
-from pomona import stream
+from pomona import pasteboard, stream
 
 # What a Standard session advertises. The Mac codes every picture in the first
 # of zlib, ZRLE and its own codecs that it finds, and listing both the layout
@@ -41,10 +41,12 @@ POINTER_EVENT = 0x05
 SET_SERVER_SCALING = 0x08
 AUTO_FRAMEBUFFER_UPDATE = 0x09
 SET_MODE = 0x0A
+FETCH_PASTEBOARD = 0x0B
 SET_DISPLAY = 0x0D
 SET_ENCRYPTION = 0x12
 AUTO_PASTEBOARD = 0x15
 EVENT_2 = 0x17
+PASTEBOARD = 0x1F
 VIEWER_INFO = 0x21
 
 # AutoFrameBufferUpdate's interval that turns the Mac's pushes off.
@@ -179,3 +181,18 @@ def set_server_scaling(factor: float) -> bytes:
     if not 0 < factor <= 1:
         raise ValueError(f"a server scaling factor of {factor}, outside (0, 1]")
     return struct.pack(">Bxd", SET_SERVER_SCALING, factor)
+
+
+def fetch_pasteboard(echo: int) -> bytes:
+    """Ask for the Mac's pasteboard; its reply carries `echo` back."""
+    return struct.pack(">BxxxI", FETCH_PASTEBOARD, echo)
+
+
+def set_pasteboard(text: str) -> bytes:
+    """Put `text` on the Mac's pasteboard, or clear it for empty text."""
+    archive = pasteboard.archive(text)
+    compressed = pasteboard.deflate(archive)
+    return (
+        struct.pack(">BxxxIII", PASTEBOARD, 0, len(archive), len(compressed))
+        + compressed
+    )
