@@ -1,0 +1,101 @@
+# Manual
+
+This document describes how to use Pomona: the `pomona` command and the Python library.
+
+## Reaching the Mac
+
+Pomona connects to the Mac's Screen Sharing port, 5900, over one TCP connection. Through
+ssh, forward a local port to it:
+
+```sh
+ssh -N -L 127.0.0.1:5901:127.0.0.1:5900 user@mac
+```
+
+The account must be allowed to sign in to Screen Sharing: on the Remote Management list
+with at least Observe and Control. See [OPERATIONS.md](OPERATIONS.md#troubleshooting).
+
+## The command
+
+```text
+pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--push-interval US] [-v]
+```
+
+| Option | |
+| --- | --- |
+| `HOST[:PORT]` | the Mac; port 5900 by default. IPv6 as `[::1]` or `[::1]:5901`. |
+| `-u`, `--user` | the macOS account to sign in as |
+| `--probe SECONDS` | receive for that long without a window, then print what arrived |
+| `--push-interval US` | pace the Mac's updates, in microseconds; 0 (the default) is as fast as it captures |
+| `-v`, `-vv` | log more, to stderr |
+| `--version` | print the version |
+
+The password comes from the environment variable `POMONA_PASSWORD`, or is asked for
+without echo. Pomona never takes it from the command line, and does not read it from a
+pipe on stdin.
+
+The window is not there yet, so for now `--probe` is required. Its report gives the
+rate, the bandwidth, when the first picture came, and the rectangles per encoding:
+
+```text
+signed in: 1440x900 'NoMac'
+17.2 s: 1.88 Mbit/s, 393 updates (22.9/s)
+first picture after 3.14 s
+  encoding  1011:   387 rects,   4001928 bytes, 95.9 screens
+  ...
+updates per second: [0, 0, 3, 52, 17, ...]
+```
+
+It exits 0 when the session ran to the end, 1 when it failed or the sign-in was
+refused, and 2 for a usage error.
+
+## The library
+
+```python
+from pomona import connect
+
+with connect("127.0.0.1", 5901, user="me", password=password) as session:
+    session.wait(10)
+    pixels = session.picture.snapshot()  # RGBA, row after row
+```
+
+### `connect`
+
+```python
+connect(host, port=5900, *, user, password, quality="adaptive",
+        push_interval_us=0, timeout=15.0, on_update=None) -> Session
+```
+
+Signs in and starts a Standard session. `quality` is `"adaptive"` for now. `timeout`
+covers the connection and the handshake. It raises:
+
+- `AuthenticationError` when the Mac refuses the sign-in, which is a wrong user name or
+  password, or an account without Remote Management permission: the Mac does not say
+  which.
+- `ProtocolError` when the server does not speak as a Mac.
+- `OSError` for the connection itself, including timeouts.
+
+All of Pomona's own errors derive from `PomonaError`.
+
+### `Session`
+
+| Member | |
+| --- | --- |
+| `picture` | the framebuffer: `width`, `height`, `snapshot()` |
+| `server` | the ServerInit: `width`, `height`, `name`, `flags`, `accepts(message_type)` |
+| `layout` | the Mac's last display layout, or None before the first |
+| `bytes_received` | bytes read off the connection so far |
+| `on_update` | called with each `stream.FramebufferUpdate` once it is drawn |
+| `closed`, `wait(timeout)` | whether the session has ended; wait for it to end |
+| `error` | why it ended, if not by `close()` |
+| `close()` | end it, after sending the input already queued |
+| `key(keysym, down)` | press or release the key of an X11 keysym |
+| `pointer(x, y, buttons)` | move the pointer with `LEFT`, `MIDDLE`, `RIGHT` held |
+| `scroll(dx, dy, x, y)` | scroll by points, positive right and down |
+
+- `on_update` runs on the session's reader thread. Keep it short: while it runs, nothing
+  is read from the Mac, and the Mac then stops reading input.
+- Positions are framebuffer pixels. The session converts them for a Mac that scales
+  its framebuffer, and swaps right and middle buttons the way the Mac expects.
+- Input never blocks; anything sent after the session ended is dropped.
+- Pomona logs through the `logging` module under the `pomona` logger, and prints
+  nothing.

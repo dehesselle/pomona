@@ -86,15 +86,15 @@ rustfmt runs on our crate only, because `apple-adaptive` keeps upstream's format
 
 ## Code from other projects
 
-Code taken from another project lives in a package of its own, never mixed into ours,
-so its license and its origin stay clear:
+What is taken from where, and why it is kept apart, is in
+[DESIGN.md](DESIGN.md#code-from-other-projects). The mechanics:
 
-- `crates/apple-adaptive/src/decoder.rs` is zDesk's decoder (MIT, © 2026 Andrew Chen),
-  byte for byte at zDesk commit `2072baf3`. It carries no header, so `REUSE.toml`
-  annotates it, and the crate keeps zDesk's `LICENSE`. To update it, copy the new file
-  over unchanged and record the commit in the crate's `Cargo.toml`.
-- Code from iShareScreen (AGPL-3.0-or-later), if any is ever taken, goes into a
-  subpackage `src/pomona/iss/` of its own, and the package's `license` gains the term.
+- `crates/apple-adaptive/src/decoder.rs` (MIT, © 2026 Andrew Chen) carries no header, so
+  `REUSE.toml` annotates it, and the crate keeps zDesk's `LICENSE`, which the wheel
+  ships. To update it, copy the new file over unchanged and record the zDesk commit in
+  the crate's `Cargo.toml`.
+- New code from another project gets its own crate or subpackage, its license text in
+  `LICENSES/`, and the license added to `license` in `pyproject.toml`.
 
 Code we write ourselves is MIT too. Every file carries the SPDX header `reuse annotate`
 writes; files that cannot are covered in `REUSE.toml`.
