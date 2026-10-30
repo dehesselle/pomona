@@ -18,7 +18,7 @@ with at least Observe and Control. See [OPERATIONS.md](OPERATIONS.md#troubleshoo
 
 ```text
 pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--quality adaptive|full]
-       [--push-interval US] [-v]
+       [--push-interval US] [--ctrl-as-command] [-v]
 ```
 
 | Option | |
@@ -28,6 +28,7 @@ pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--quality adaptive|ful
 | `--probe SECONDS` | instead of a window: receive for that long, then print what arrived |
 | `--quality` | `adaptive` (the default): Apple's tiles, coarse first and refined after; `full`: lossless zlib, about ten times the traffic |
 | `--push-interval US` | pace the Mac's updates, in microseconds; 0 (the default) is as fast as it captures |
+| `--ctrl-as-command` | send Control as Command and the Windows key as Control, so Ctrl-C copies on the Mac |
 | `-v`, `-vv` | log more, to stderr |
 | `--version` | print the version |
 
@@ -38,7 +39,19 @@ pipe on stdin.
 Without `--probe`, Pomona opens a window showing the Mac's screen, scaled to fit the
 window and keeping its aspect. Closing the window ends the session, and the session
 ending closes the window. With `-v` it logs, at the end, the updates received and the
-frames drawn. Keyboard and mouse do not reach the Mac yet.
+frames drawn.
+
+Keys, clicks and the mouse wheel in the window go to the Mac:
+
+- Keys type what your keyboard layout makes of them, accents and AltGr included, into
+  whatever layout the Mac has.
+- Alt is Option and the Windows key is Command, as on a Mac keyboard where they sit.
+  With `--ctrl-as-command`, Control is Command and the Windows key Control instead.
+- On Windows the window keeps the Windows keys, Alt-Tab, Alt-Esc, Alt-Space and
+  Ctrl-Esc while it is in front, so they reach the Mac: Windows-Tab is Command-Tab.
+  Ctrl-Alt-Del stays with Windows.
+- Caps Lock, Num Lock, Insert, Pause, Scroll Lock, Print and the menu key are not sent;
+  the Mac has nothing for them.
 
 `--probe` reports the rate, the bandwidth, when the first picture came, and the
 rectangles per encoding:
@@ -97,7 +110,7 @@ All of Pomona's own errors derive from `PomonaError`.
 | `closed`, `wait(timeout)` | whether the session has ended; wait for it to end |
 | `error` | why it ended, if not by `close()` |
 | `close()` | end it, after sending the input already queued |
-| `key(keysym, down)` | press or release the key of an X11 keysym |
+| `key(keysym, down)` | press or release the key of an X11 keysym, as the Mac reads it |
 | `pointer(x, y, buttons)` | move the pointer with `LEFT`, `MIDDLE`, `RIGHT` held |
 | `scroll(dx, dy, x, y)` | scroll by points, positive right and down |
 
@@ -105,6 +118,11 @@ All of Pomona's own errors derive from `PomonaError`.
   is read from the Mac, and the Mac then stops reading input.
 - Positions are framebuffer pixels. The session converts them for a Mac that scales
   its framebuffer, and swaps right and middle buttons the way the Mac expects.
+- Keysyms go out as given, and the Mac reads them its own way
+  ([protocol.md](protocol.md#input)): `Meta_L` (`0xffe7`) is Option, `Super_L`
+  (`0xffeb`) and `Alt_L` both Command. Send characters beyond ASCII as Unicode keysyms
+  (`0x01000000` plus the code point), and a key held down as repeated releases and
+  presses: the Mac repeats nothing itself.
 - Input never blocks; anything sent after the session ended is dropped.
 - Pomona logs through the `logging` module under the `pomona` logger, and prints
   nothing.
@@ -118,8 +136,10 @@ session = connect("127.0.0.1", 5901, user="me", password=password)
 run_window(session, title="My Mac")  # returns when the window closes
 ```
 
-`run_window(session, *, title=None)` shows the session's screen in a window until the
-window is closed or the session ends, and then closes the session.
+`run_window(session, *, title=None, ctrl_as_command=False)` shows the session's screen
+in a window until the window is closed or the session ends, and then closes the
+session. Keys, clicks and scrolling in the window go to the Mac as the command
+describes; `ctrl_as_command` is `--ctrl-as-command`.
 
 - It runs on the calling thread, which on macOS must be the main thread. The session's
   own threads go on meanwhile; `on_update` still runs on the reader thread.

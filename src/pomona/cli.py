@@ -69,7 +69,9 @@ def _window(host: str, port: int, password: str, args: argparse.Namespace) -> in
         on_update=count,
     )
     start = time.monotonic()
-    run_window(session, title=f"{args.user} at {host}")
+    run_window(
+        session, title=f"{args.user} at {host}", ctrl_as_command=args.ctrl_as_command
+    )
     elapsed = time.monotonic() - start
     logging.getLogger(__name__).info(
         "%.1f s: %d updates received, %d frames drawn",

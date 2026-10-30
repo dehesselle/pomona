@@ -38,6 +38,15 @@ of an interval is that a moving window arrives in strips captured at different m
 - **Without a GPU**, wgpu draws with the system's software renderer (WARP on Windows).
   On a Windows VM at 1024×768 it showed a 1440×900 Mac scaled to fit, live
   ([measurements.md](measurements.md#pomona-live)).
+- **Input goes out as it happens.** Keys and clicks go out at once; pointer moves go out
+  once for each pass of the window's loop, the last position only. Clicks land where the
+  pointer is on the picture, through the window's scaling; over the letterbox they land
+  on the picture's nearest edge.
+- **A held key repeats** at the local keyboard's rate, each repeat a release and a press,
+  because the Mac repeats nothing itself.
+- **Losing the focus releases** every key and button held, for the Mac too: a key held
+  while switching away would otherwise stay down on the Mac.
+- **A wheel notch** scrolls 40 points, three lines in TextEdit.
 
 ## How a session ends
 
@@ -84,6 +93,9 @@ none comes, check the Mac's own log, over ssh on the Mac (the full path, since z
 
 **Low update rates.** Compare over the same path only: every ssh hop adds latency, and
 the Mac paces itself by how fast its socket drains ([measurements.md](measurements.md)).
+
+**The Windows key opens the Start menu.** Pomona could not install its keyboard hook;
+the window works, but Windows keeps its keys.
 
 **"no graphics adapter can draw to the window", or "the window cannot be drawn to".**
 Pomona found no D3D12 (Windows) or Metal (macOS) device for the window. On Windows, a

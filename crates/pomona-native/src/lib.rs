@@ -7,7 +7,10 @@
 
 pub mod canvas;
 mod gpu;
+#[cfg(target_os = "windows")]
+mod grab;
 pub mod inflate;
+mod keys;
 mod picture;
 mod window;
 pub mod zrle;

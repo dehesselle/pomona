@@ -10,7 +10,7 @@ How to build, test and lint Pomona, and how code from other projects is kept in 
 - `crates/apple-adaptive/`: zDesk's Adaptive decoder, taken over unchanged (see
   [Code from other projects](#code-from-other-projects)).
 - `tests/`: pytest tests and their recorded fixtures.
-- `tools/`: scripts for trying things by hand on a devbox (`window_check.py`).
+- `tools/`: scripts for trying things on a devbox (`window_check.py`, `input_check.py`).
 
 ## Where to build and test
 
@@ -148,8 +148,27 @@ uv run python tools/window_check.py --fixture zlib.rfb --quality full --seconds 
 uv run python tools/window_check.py --port 15900 --seconds 20 --shot C:\setup\shot.png
 ```
 
-The fake Mac ends the session after 5 s without traffic. Over RDP, the same window can be
-used by hand.
+The fake Mac ends the session after 5 s without traffic (its `idle`). Over RDP, the same
+window can be used by hand.
+
+`tools/input_check.py` tries input: it opens the window on the fake Mac, types and
+clicks into it, and compares what the fake Mac received with what it should have,
+printing PASS or FAIL:
+
+```sh
+uv run python tools/input_check.py
+```
+
+- It sends input through `SendInput`, from a process of its own, as a keyboard and
+  mouse would. It moves the pointer with `SendInput` too: `SetCursorPos`'s move can
+  arrive after the clicks that follow it.
+- It brings the window forward by clicking its title bar, as a user would. Windows let
+  neither the window's own process nor another bring it forward with
+  `SetForegroundWindow` every time.
+- It waits for the first frame before typing: the window exists before it can draw,
+  and its grab is set up along with the drawing.
+- A disconnected RDP session has no desktop either. `tscon 1 /dest:console` hands it
+  back to the console.
 
 **A live Mac on the box.** qem runs on the PC, so the box reaches the Mac through it:
 `qem ssh --forward 15900:5900` on the PC, then

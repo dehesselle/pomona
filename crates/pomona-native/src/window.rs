@@ -9,6 +9,12 @@
 //! Wake-ups for the picture are coalesced: one is outstanding at a time, and
 //! the upload takes everything that changed since.
 //!
+//! Input goes to Python as it happens, as `on_event("key", keysym, down)`,
+//! `on_event("pointer", x, y, buttons)` and `on_event("scroll", dx, dy, x,
+//! y)`, positions in the picture's pixels, buttons as RFB numbers them, scroll
+//! distances in points. Pointer motion is coalesced: what moved during one
+//! pass of the loop goes out once, before the next key or click.
+//!
 //! The loop holds no GIL. It takes it only to tell Python about the window
 //! (`on_event`), and stops at the first exception that raises.
 
@@ -18,12 +24,20 @@ use std::sync::{Arc, Mutex};
 use pyo3::prelude::*;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
+use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy};
+#[cfg(target_os = "windows")]
+use winit::keyboard::Key;
+use winit::keyboard::PhysicalKey;
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{CustomCursor, Window, WindowId};
 
 use crate::gpu::{Frame, Gpu};
+use crate::keys::{KeyInput, Keyboard, Press};
 use crate::picture::Shared;
+
+/// How far one notch of a mouse wheel scrolls, in points.
+const POINTS_PER_NOTCH: f64 = 40.0;
 
 /// Why the loop is woken.
 #[derive(Debug, Clone, Copy)]
@@ -34,6 +48,9 @@ pub enum Wake {
     Cursor,
     /// The session is over.
     Quit,
+    /// Keys were grabbed from the system.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    Keys,
 }
 
 /// How the picture reaches a window, if one is open.
@@ -81,7 +98,9 @@ pub struct CursorImage {
 }
 
 /// Open a window on `shared` and run until it is closed or the session quits.
-pub fn run(shared: Arc<Shared>, on_event: Py<PyAny>, title: String) -> PyResult<()> {
+/// With `ctrl_as_command`, Control goes out as Command and the Windows key as
+/// Control.
+pub fn run(shared: Arc<Shared>, on_event: Py<PyAny>, title: String, ctrl_as_command: bool) -> PyResult<()> {
     let mut builder = EventLoop::<Wake>::with_user_event();
     #[cfg(target_os = "windows")]
     {
@@ -90,21 +109,39 @@ pub fn run(shared: Arc<Shared>, on_event: Py<PyAny>, title: String) -> PyResult<
         use winit::platform::windows::EventLoopBuilderExtWindows;
         builder.with_any_thread(true);
     }
+    #[cfg(target_os = "macos")]
+    {
+        // winit's menu would keep Command-Q and Command-H from the Mac.
+        use winit::platform::macos::EventLoopBuilderExtMacOS;
+        builder.with_default_menu(false);
+    }
     let event_loop = builder
         .build()
         .map_err(|error| window_error(format!("no event loop: {error}")))?;
     event_loop.set_control_flow(ControlFlow::Wait);
+    // No device events: Pomona uses none, and on Windows the raw keyboard
+    // input winit registers for them keeps every low-level keyboard hook,
+    // the grab's included, from hearing keys while the window is in front.
+    event_loop.listen_device_events(DeviceEvents::Never);
     shared.waker.attach(Some(event_loop.create_proxy()));
     let mut app = App {
         shared: shared.clone(),
         on_event,
         title,
+        #[cfg(target_os = "windows")]
+        proxy: event_loop.create_proxy(),
         gpu: None,
         cursor: None,
         error: None,
+        keyboard: Keyboard::new(ctrl_as_command),
+        pointer: Pointer::default(),
+        #[cfg(target_os = "windows")]
+        grab: None,
     };
     let ran = event_loop.run_app(&mut app);
     shared.waker.attach(None);
+    #[cfg(target_os = "windows")]
+    drop(app.grab.take());
     if let Some(error) = app.error {
         return Err(error);
     }
@@ -115,14 +152,33 @@ fn window_error(message: String) -> PyErr {
     pyo3::exceptions::PyRuntimeError::new_err(message)
 }
 
+/// The pointer, as the Mac last heard of it and as it is now.
+#[derive(Default)]
+struct Pointer {
+    /// Where it is on the picture, once it has been over the window.
+    position: Option<(u16, u16)>,
+    /// RFB's button bits: 1 left, 2 middle, 4 right.
+    buttons: u8,
+    /// Moved since the Mac last heard.
+    moved: bool,
+    /// Scrolling not yet sent, less than a point.
+    scroll: (f64, f64),
+}
+
 struct App {
     shared: Arc<Shared>,
     on_event: Py<PyAny>,
     title: String,
+    #[cfg(target_os = "windows")]
+    proxy: EventLoopProxy<Wake>,
     gpu: Option<Gpu>,
     /// Kept so the shape stays alive while the window shows it.
     cursor: Option<CustomCursor>,
     error: Option<PyErr>,
+    keyboard: Keyboard,
+    pointer: Pointer,
+    #[cfg(target_os = "windows")]
+    grab: Option<crate::grab::Hook>,
 }
 
 impl App {
@@ -179,6 +235,11 @@ impl App {
         }
         let scale = window.scale_factor();
         let adapter = gpu.adapter.clone();
+        #[cfg(target_os = "windows")]
+        {
+            // Without the grab the window still works; Windows keeps its keys.
+            self.grab = crate::grab::install(&window, self.proxy.clone());
+        }
         self.gpu = Some(gpu);
         self.tell(event_loop, |py, f| f.call1(py, ("opened", adapter, scale)));
         self.set_cursor(event_loop);
@@ -199,6 +260,117 @@ impl App {
             gpu.upload(&canvas, &damage);
             drop(canvas);
             gpu.window.request_redraw();
+        }
+    }
+
+    fn key(&mut self, event_loop: &ActiveEventLoop, keysym: u32, down: bool) {
+        self.send_motion(event_loop);
+        self.tell(event_loop, |py, f| f.call1(py, ("key", keysym, down)));
+    }
+
+    fn press(&mut self, event_loop: &ActiveEventLoop, key: &KeyInput) {
+        match self.keyboard.press(key) {
+            Some(Press::Down(keysym)) => self.key(event_loop, keysym, true),
+            Some(Press::Repeat(keysym)) => {
+                self.key(event_loop, keysym, false);
+                self.key(event_loop, keysym, true);
+            }
+            None => {}
+        }
+    }
+
+    fn release(&mut self, event_loop: &ActiveEventLoop, physical: PhysicalKey) {
+        if let Some(keysym) = self.keyboard.release(physical) {
+            self.key(event_loop, keysym, false);
+        }
+    }
+
+    fn keyboard_input(&mut self, event_loop: &ActiveEventLoop, event: &KeyEvent) {
+        if event.state == ElementState::Pressed {
+            let base = event.key_without_modifiers();
+            let key = KeyInput {
+                physical: event.physical_key,
+                logical: &event.logical_key,
+                base: Some(&base),
+                text: event.text.as_deref(),
+                location: event.location,
+            };
+            self.press(event_loop, &key);
+        } else {
+            self.release(event_loop, event.physical_key);
+        }
+    }
+
+    /// Keys grabbed from the system, after winit's own events.
+    #[cfg(target_os = "windows")]
+    fn grabbed_keys(&mut self, event_loop: &ActiveEventLoop) {
+        for grabbed in crate::grab::take() {
+            let physical = PhysicalKey::Code(grabbed.code);
+            if grabbed.down {
+                let key = KeyInput {
+                    physical,
+                    logical: &Key::Named(grabbed.key),
+                    base: None,
+                    text: None,
+                    location: grabbed.location,
+                };
+                self.press(event_loop, &key);
+            } else {
+                self.release(event_loop, physical);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn grabbed_keys(&mut self, _event_loop: &ActiveEventLoop) {}
+
+    /// The window lost the focus: whatever is held comes up where the Mac
+    /// cannot see it, so it is released for the Mac now.
+    fn release_everything(&mut self, event_loop: &ActiveEventLoop) {
+        for keysym in self.keyboard.release_all() {
+            self.key(event_loop, keysym, false);
+        }
+        if self.pointer.buttons != 0 {
+            self.pointer.buttons = 0;
+            self.send_pointer(event_loop);
+        }
+    }
+
+    fn send_pointer(&mut self, event_loop: &ActiveEventLoop) {
+        self.pointer.moved = false;
+        if let Some((x, y)) = self.pointer.position {
+            let buttons = self.pointer.buttons;
+            self.tell(event_loop, |py, f| f.call1(py, ("pointer", x, y, buttons)));
+        }
+    }
+
+    fn send_motion(&mut self, event_loop: &ActiveEventLoop) {
+        if self.pointer.moved {
+            self.send_pointer(event_loop);
+        }
+    }
+
+    fn scroll(&mut self, event_loop: &ActiveEventLoop, delta: MouseScrollDelta) {
+        let Some((x, y)) = self.pointer.position else {
+            return;
+        };
+        // winit's deltas are positive for left and up, the session's for
+        // right and down.
+        let (dx, dy) = match delta {
+            MouseScrollDelta::LineDelta(dx, dy) => (-dx as f64 * POINTS_PER_NOTCH, -dy as f64 * POINTS_PER_NOTCH),
+            MouseScrollDelta::PixelDelta(at) => {
+                let scale = self.gpu.as_ref().map_or(1.0, |gpu| gpu.window.scale_factor());
+                (-at.x / scale, -at.y / scale)
+            }
+        };
+        // What does not make a whole point waits for the next notch.
+        let (sx, sy) = (self.pointer.scroll.0 + dx, self.pointer.scroll.1 + dy);
+        let whole = (sx.trunc(), sy.trunc());
+        self.pointer.scroll = (sx - whole.0, sy - whole.1);
+        if whole != (0.0, 0.0) {
+            self.send_motion(event_loop);
+            let (dx, dy) = (whole.0 as i32, whole.1 as i32);
+            self.tell(event_loop, |py, f| f.call1(py, ("scroll", dx, dy, x, y)));
         }
     }
 
@@ -246,7 +418,14 @@ impl ApplicationHandler<Wake> for App {
             Wake::Picture => self.upload(),
             Wake::Cursor => self.set_cursor(event_loop),
             Wake::Quit => event_loop.exit(),
+            // Taken once the events winit has are through.
+            Wake::Keys => {}
         }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.grabbed_keys(event_loop);
+        self.send_motion(event_loop);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -261,6 +440,44 @@ impl ApplicationHandler<Wake> for App {
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.tell(event_loop, |py, f| f.call1(py, ("scale", scale_factor)))
             }
+            // winit's own presses and releases around a change of focus are
+            // left out: losing the focus releases everything below.
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic: false,
+                ..
+            } => {
+                self.grabbed_keys(event_loop);
+                self.keyboard_input(event_loop, &event);
+            }
+            WindowEvent::Focused(false) => {
+                self.grabbed_keys(event_loop);
+                self.release_everything(event_loop);
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let at = self
+                    .gpu
+                    .as_ref()
+                    .and_then(|gpu| gpu.picture_position(position.x, position.y));
+                if at.is_some() && at != self.pointer.position {
+                    self.pointer.position = at;
+                    self.pointer.moved = true;
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let bit = match button {
+                    MouseButton::Left => 0x01,
+                    MouseButton::Middle => 0x02,
+                    MouseButton::Right => 0x04,
+                    _ => return,
+                };
+                match state {
+                    ElementState::Pressed => self.pointer.buttons |= bit,
+                    ElementState::Released => self.pointer.buttons &= !bit,
+                }
+                self.send_pointer(event_loop);
+            }
+            WindowEvent::MouseWheel { delta, .. } => self.scroll(event_loop, delta),
             WindowEvent::RedrawRequested => {
                 let Some(gpu) = &mut self.gpu else {
                     return;

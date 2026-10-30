@@ -7,22 +7,12 @@ the other documents.
 Every step ends with its tests passing on a devbox, and live against a NoMac Mac where
 the Mac is involved.
 
-## 1. Input
-
-- Keys from winit as X11 keysyms, with the Mac's rules: lowercase under Caps Lock, Alt
-  sent as Meta (Option), the Windows key as Super (Command), Ctrl as Command optional.
-  On a macOS client, Command as Super and Option as Meta, with winit's default menu off
-  so Command-Q reaches the Mac ([protocol.md](protocol.md#input)).
-- Mouse buttons, the scroll message, and position mapping through the window's scaling.
-- Grabbing the keyboard on Windows while focused (the Windows key, Alt-Tab).
-- Live: typing, clicking and scrolling in TextEdit.
-
-Question: does the keyboard grab work with winit's event loop?
-
-## 2. The window on macOS, and on Retina
+## 1. The window on macOS, and on Retina
 
 - Build and try the window on macOS. No devbox runs macOS; a NoMac Mac is the likely
   place, showing another NoMac Mac or itself.
+- The keys on a macOS client: Command and Option, and Command-Q reaching the Mac with
+  winit's menu off. They compile for macOS but have not run there.
 - Check `SetServerScaling` live against a Retina Mac (NoMac's Macs are 1x), and the
   pointer's shape on a HiDPI client, where it is drawn at its size in points and so
   looks small.
@@ -30,14 +20,18 @@ Question: does the keyboard grab work with winit's event loop?
 
 Question: how does Adaptive look while it moves and refines (text while scrolling)?
 
-## 3. Pasteboard and polish
+## 2. Pasteboard and polish
 
 - The pasteboard both ways, text only, through `arboard`
   ([protocol.md](protocol.md#the-pasteboard)).
 - Reconnecting after the Mac drops the session.
 - Acting on `MiscStatus` 17 (a login or logout at the Mac).
+- Keys from a layout with AltGr and dead keys, live: so far only the unit tests and a
+  US layout have tried them.
+- The keyboard source the Mac reports (`0x455`): its layout, and whether a secure text
+  field has the focus.
 
-## 4. qem
+## 3. qem
 
 `qem desktop` uses Pomona in-process when installed (an extra, `qem[desktop]`):
 qem opens the ssh forward and fetches the Mac's login, and hands both to Pomona, so

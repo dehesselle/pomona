@@ -339,6 +339,14 @@ shape; the old one stays until the tool ends. Apple's viewer shows the same.
   - Option is stripped from ordinary keys unless Command is also held.
   - Insert, Pause, Scroll Lock, Print and Menu have no mapping; Num Lock arrives as
     Keypad Clear.
+  - **Characters beyond ASCII** arrive as X11's Unicode keysyms (`0x01000000` plus the
+    code point), whatever the Mac's layout: `ä`, `ß` and `€` typed correctly into
+    TextEdit on a US layout. The Latin-1 keysym for `ä` (`0xe4`) typed a backslash, and
+    `ö` and `ü` nothing (macOS 26.6).
+  - **Held keys.** The Mac does not repeat a key held down, and a second press without a
+    release types nothing: a key held 1.5 s typed one character, and one pressed 21
+    times without a release typed one too. Each repeat has to go out as a release and a
+    press, as Pomona sends it.
 - **Pointer** (`05`, a `u8` mask, `u16` x and y): on 003.889 the Mac reads the mask as
   macOS button numbers, so bit 1 is **right** and bit 2 **middle**, the other way round
   from RFB.
@@ -349,7 +357,8 @@ shape; the old one stays until the tool ends. Apple's viewer shows the same.
   deltas in 16.16, three `i32` point deltas, `u32` scroll phase, momentum phase and
   scroll count, `u32` flags (2 is continuous), and the pointer's `u16` x and y. Up and
   left are positive. Pomona sends the point delta, a tenth of it as lines, the
-  continuous flag and no phase.
+  continuous flag and no phase. It sends 40 points for a notch of a mouse wheel, which
+  scrolled TextEdit by three lines, as a notch scrolls on Windows.
 - **Double-click** is decided by the Mac from clicks on the same spot within its
   double-click interval, which it reads once at login.
 

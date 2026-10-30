@@ -137,12 +137,21 @@ impl Picture {
 }
 
 /// Show `picture` in a window until it is closed or `picture.quit()` is
-/// called. `on_event(kind, *args)` hears about the window: `("opened",
-/// adapter, scale)` and `("scale", scale)`. Runs on the calling thread, which
-/// on macOS must be the main thread; a process can run one event loop only.
+/// called. `on_event(kind, *args)` hears about the window, `("opened",
+/// adapter, scale)` and `("scale", scale)`, and its input: `("key", keysym,
+/// down)`, `("pointer", x, y, buttons)` and `("scroll", dx, dy, x, y)`. With
+/// `ctrl_as_command`, Control goes out as Command and the Windows key as
+/// Control. Runs on the calling thread, which on macOS must be the main
+/// thread; a process can run one event loop only.
 #[pyfunction]
-#[pyo3(signature = (picture, on_event, title = "Pomona".to_owned()))]
-pub fn run_window(py: Python<'_>, picture: &Picture, on_event: Py<PyAny>, title: String) -> PyResult<()> {
+#[pyo3(signature = (picture, on_event, title = "Pomona".to_owned(), ctrl_as_command = false))]
+pub fn run_window(
+    py: Python<'_>,
+    picture: &Picture,
+    on_event: Py<PyAny>,
+    title: String,
+    ctrl_as_command: bool,
+) -> PyResult<()> {
     let shared = picture.shared.clone();
-    py.detach(|| window::run(shared, on_event, title))
+    py.detach(|| window::run(shared, on_event, title, ctrl_as_command))
 }

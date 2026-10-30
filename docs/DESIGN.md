@@ -35,7 +35,9 @@ crates/pomona-native/         Rust: pomona._native
   inflate.rs   a deflate stream that lasts the session
   zrle.rs      ZRLE's tiles
   picture.rs   Picture, the canvas as Python sees it, and run_window
-  window.rs    the window: winit's event loop, wake-ups, the cursor
+  window.rs    the window: winit's event loop, wake-ups, the cursor, input
+  keys.rs      keys as the Mac reads them
+  grab.rs      the keys Windows would keep, grabbed (Windows only)
   gpu.rs       wgpu: the texture, uploads, drawing
 crates/apple-adaptive/        Rust: zDesk's Adaptive decoder, unchanged
 ```
@@ -114,9 +116,36 @@ How it runs:
   `min(1, client scale / Mac density)` with `SetServerScaling`, as Apple's viewer does,
   so the Mac sends its screen at the client's density.
 
-Input is next: winit's events go out as X11 keysyms and positions in framebuffer pixels;
-the session applies the Mac's rules. Keyboard grab on Windows is to be a low-level
-keyboard hook; the clipboard `arboard`.
+### Input
+
+The window turns winit's events into what the session sends: `on_event("key", keysym,
+down)`, `("pointer", x, y, buttons)` and `("scroll", dx, dy, x, y)`, with positions in
+the picture's pixels. The session sends them as they come.
+
+- **Keys are mapped in Rust** (`keys.rs`), where winit's events are, because a key's
+  release must send what its press sent: Shift may change between the two. A press
+  sends the character the local layout made, dead keys composed in, so any keyboard
+  types what its caps show; the Mac finds the character on its own layout. Alt goes out
+  as Option and the Windows key as Command, or Control as Command when asked. The Mac's
+  quirks ([protocol.md](protocol.md#input)) are applied here: letters under a shortcut
+  take the case Shift gives them, characters beyond ASCII go out as Unicode keysyms, and
+  a repeat goes out as a release and a press. Losing the focus releases every key and
+  button held.
+- **Pointer motion is coalesced.** Each call into Python takes the GIL, which the
+  reader may hold for up to Python's switch interval, so the moves of one pass of the
+  loop go out once, before the next key or click, rather than one call per move.
+- **The Windows grab** (`grab.rs`) is a low-level keyboard hook on a thread of its own.
+  While the window is in front, it takes the Windows keys, Alt-Tab, Alt-Esc, Alt-Space
+  and Ctrl-Esc from Windows and queues them for the loop. Every other key goes through
+  winit and the layout. The loop takes the queue only after the events winit has, because
+  the hook runs ahead of the input it hooks: Alt's own event may still be waiting when
+  Tab is grabbed.
+- **No device events.** winit's device events would register for raw keyboard input,
+  and on Windows that keeps every low-level hook, the grab's and other programs', from
+  hearing a key while the window is in front.
+- **On macOS** winit's default menu is off, so Command-Q and Command-H reach the Mac.
+
+The pasteboard is next, through `arboard`.
 
 ## Build and version
 
@@ -179,3 +208,7 @@ taking.
     the Mac's input as surely as a reader that stopped reading.
 12. **Errors in the extension come out as exceptions, never panics,** wgpu's included,
     because a panic in the window would tear through the caller's Python.
+13. **A key's release sends the keysym its press sent,** because the Mac holds the key
+    it was told about, and a release of another one would leave it held.
+14. **winit's device events stay off,** because on Windows they bring raw keyboard
+    input, which silences the keyboard grab.

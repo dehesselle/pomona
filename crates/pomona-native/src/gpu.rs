@@ -111,7 +111,9 @@ impl Gpu {
         let errors = Arc::new(Mutex::new(None));
         let sink = errors.clone();
         device.on_uncaptured_error(Arc::new(move |error: wgpu::Error| {
-            sink.lock().unwrap_or_else(|p| p.into_inner()).get_or_insert(error.to_string());
+            sink.lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .get_or_insert(error.to_string());
         }));
 
         let capabilities = surface.get_capabilities(&adapter);
@@ -332,6 +334,13 @@ impl Gpu {
         Some((((sw - w) / 2.0).floor(), ((sh - h) / 2.0).floor(), w, h))
     }
 
+    /// Where a point of the window falls on the picture, in the picture's
+    /// pixels; a point beside it falls on its nearest edge.
+    pub fn picture_position(&self, x: f64, y: f64) -> Option<(u16, u16)> {
+        let picture = self.picture.as_ref()?;
+        Some(on_picture(self.viewport()?, (picture.width, picture.height), x, y))
+    }
+
     /// Draw a frame.
     pub fn render(&mut self) -> Result<Frame, String> {
         let frame = match self.surface.get_current_texture() {
@@ -375,5 +384,34 @@ impl Gpu {
             return Err(format!("drawing failed: {error}"));
         }
         Ok(Frame::Presented)
+    }
+}
+
+/// Where `x`, `y` of the window falls on a picture of `size` shown in
+/// `viewport` (x, y, width, height), clamped to the picture.
+fn on_picture(viewport: (f32, f32, f32, f32), size: (u32, u32), x: f64, y: f64) -> (u16, u16) {
+    let (vx, vy, vw, vh) = viewport;
+    let along = |at: f64, origin: f32, extent: f32, pixels: u32| {
+        let pixel = ((at - origin as f64) / extent.max(1.0) as f64 * pixels as f64).floor();
+        pixel.clamp(0.0, pixels.saturating_sub(1) as f64) as u16
+    };
+    (along(x, vx, vw, size.0), along(y, vy, vh, size.1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_picture;
+
+    #[test]
+    fn a_point_maps_through_the_scaling_and_clamps_to_the_picture() {
+        // 1440x900 shown at 0.64 in 1024x768, letterboxed 96 pixels above.
+        let viewport = (0.0, 96.0, 922.0, 576.0);
+        let size = (1440, 900);
+        assert_eq!(on_picture(viewport, size, 0.0, 96.0), (0, 0));
+        assert_eq!(on_picture(viewport, size, 461.0, 384.0), (720, 450));
+        assert_eq!(on_picture(viewport, size, 921.9, 671.9), (1439, 899));
+        assert_eq!(on_picture(viewport, size, 1000.0, 10.0), (1439, 0));
+        // At one to one, a pixel is a pixel.
+        assert_eq!(on_picture((0.0, 0.0, 1440.0, 900.0), size, 100.5, 7.0), (100, 7));
     }
 }

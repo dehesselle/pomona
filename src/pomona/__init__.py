@@ -85,6 +85,11 @@ def main(argv: list[str] | None = None) -> None:
         metavar="US",
         help="pace the Mac's updates, in microseconds (default 0: as fast as it can)",
     )
+    parser.add_argument(
+        "--ctrl-as-command",
+        action="store_true",
+        help="send Control as Command and the Windows key as Control",
+    )
     parser.add_argument("-v", "--verbose", action="count", default=0)
     args = parser.parse_args(argv)
 

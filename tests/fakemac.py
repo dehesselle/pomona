@@ -85,7 +85,8 @@ class FakeMac:
     out in records of the sizes `chunks` cycles through, so messages span
     records as they do from a Mac. What the client sent after the rekey is in
     `received`, and an assertion that failed in the thread is in `failure`.
-    With `hang_up`, it closes the connection once the stream is out.
+    With `hang_up`, it closes the connection once the stream is out; otherwise
+    it waits for the client until `idle` seconds pass without a message.
     """
 
     def __init__(
@@ -98,6 +99,7 @@ class FakeMac:
         misc_status_before_rekey: bool = True,
         commands: bytes = COMMANDS,
         hang_up: bool = False,
+        idle: float = 5.0,
     ) -> None:
         self.stream = stream
         self.user, self.password = user, password
@@ -105,6 +107,7 @@ class FakeMac:
         self.misc_status_before_rekey = misc_status_before_rekey
         self.commands = commands
         self.hang_up = hang_up
+        self.idle = idle
         self.received: list[bytes] = []
         self.failure: BaseException | None = None
         self.signed_in = threading.Event()
@@ -190,7 +193,7 @@ class FakeMac:
             return
         # What the client sent meanwhile: arming, a request, input. It stops
         # with the client closing the connection.
-        conn.settimeout(5)
+        conn.settimeout(self.idle)
         try:
             while True:
                 self.received.append(inbound.open(conn))
