@@ -1,10 +1,16 @@
 # Pomona
 
-Pomona shows and controls a Mac's screen over Apple Screen Sharing's own protocol
-(RFB 003.889), as a Python library and a command-line tool. It speaks Standard mode with
-Adaptive quality, which runs over a single TCP connection. That connection can be
-forwarded over ssh, which High Performance mode cannot. A Rust extension does the
-decoding and draws the window.
+> _Pomona (Latin: [poːˈmoːna]) was a goddess of fruitful abundance and plenty in ancient Roman religion and myth. Her name comes from the Latin word pomum, "fruit", specifically orchard fruit._
+>
+>_source: [Wikipedia](https://en.wikipedia.org/wiki/Pomona_(mythology))_
+
+Pomona is an Apple Screen Sharing client (RFB 003.889), both as a Python library and a
+command-line tool. It speaks Standard mode with Adaptive quality, which runs over a
+single TCP connection. That connection can be forwarded over ssh, which High Performance
+mode cannot. A Rust extension does the decoding and draws the window.
+
+Pomona builds on [zDesk](https://github.com/andrewtheguy/zdesk) by Andrew Chen: its
+notes on the protocol were invaluable and its Adaptive decoder is included verbatim.
 
 **Status:** early development. It shows the Mac's screen in a window, passes the
 keyboard, mouse and pasteboard text to it, and reconnects when the connection drops;
