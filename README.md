@@ -4,10 +4,10 @@ Pomona shows and controls a Mac's screen over Apple Screen Sharing's own protoco
 (RFB 003.889), as a Python library and a command-line tool. It speaks Standard mode with
 Adaptive quality, which runs over a single TCP connection. That connection can be
 forwarded over ssh, which High Performance mode cannot. A Rust extension does the
-decoding and is to draw the window.
+decoding and draws the window.
 
-**Status:** early development. It signs in and receives the Mac's picture, without a
-window yet.
+**Status:** early development. It shows the Mac's screen in a window, tried on Windows;
+keyboard and mouse do not reach the Mac yet.
 
 ## Install and use
 
@@ -16,7 +16,7 @@ From a checkout, with [uv](https://docs.astral.sh/uv/) and a Rust toolchain:
 ```sh
 uv sync
 ssh -N -L 127.0.0.1:5901:127.0.0.1:5900 me@mac &
-POMONA_PASSWORD=... uv run pomona 127.0.0.1:5901 -u me --probe 10
+POMONA_PASSWORD=... uv run pomona 127.0.0.1:5901 -u me
 ```
 
 The macOS account needs Remote Management permission; without it, the Mac refuses the

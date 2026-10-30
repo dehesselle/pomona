@@ -35,11 +35,6 @@ def run(args: argparse.Namespace) -> int:
         level=(logging.WARNING, logging.INFO, logging.DEBUG)[min(args.verbose, 2)],
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    if args.probe is None:
-        print(
-            "pomona: the window is not there yet; use --probe SECONDS", file=sys.stderr
-        )
-        return 2
     host, port = split_target(args.target)
     # From the environment or a prompt; never from a pipe on stdin, which made
     # every sign-in fail when PowerShell fed it.
@@ -47,10 +42,45 @@ def run(args: argparse.Namespace) -> int:
         f"Password for {args.user} at {host}: "
     )
     try:
-        return _probe(host, port, password, args)
-    except (PomonaError, OSError) as error:
+        if args.probe is not None:
+            return _probe(host, port, password, args)
+        return _window(host, port, password, args)
+    except (PomonaError, OSError, RuntimeError) as error:
         print(f"pomona: {error}", file=sys.stderr)
         return 1
+
+
+def _window(host: str, port: int, password: str, args: argparse.Namespace) -> int:
+    from pomona.window import run_window
+
+    updates = 0
+
+    def count(_update: stream.FramebufferUpdate) -> None:
+        nonlocal updates
+        updates += 1
+
+    session = connect(
+        host,
+        port,
+        user=args.user,
+        password=password,
+        quality=args.quality,
+        push_interval_us=args.push_interval,
+        on_update=count,
+    )
+    start = time.monotonic()
+    run_window(session, title=f"{args.user} at {host}")
+    elapsed = time.monotonic() - start
+    logging.getLogger(__name__).info(
+        "%.1f s: %d updates received, %d frames drawn",
+        elapsed,
+        updates,
+        session.picture.frames,
+    )
+    if session.error is not None:
+        print(f"pomona: the session ended: {session.error}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def _probe(host: str, port: int, password: str, args: argparse.Namespace) -> int:

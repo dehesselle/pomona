@@ -69,12 +69,27 @@ impl fmt::Display for Error {
     }
 }
 
+/// A rectangle of the framebuffer: x, y, width, height.
+pub type Rect = (usize, usize, usize, usize);
+
+/// What changed since the window last looked.
+#[derive(Debug, Default, PartialEq)]
+pub struct Damage {
+    /// The framebuffer has a new size, and all of it is new.
+    pub resized: bool,
+    pub rects: Vec<Rect>,
+}
+
+/// More changed rectangles than this are merged into their union.
+const MAX_RECTS: usize = 32;
+
 /// A framebuffer of `width` × `height` pixels, row after row, each R, G, B, A
 /// in memory.
 pub struct Canvas {
     width: usize,
     height: usize,
     pixels: Vec<u32>,
+    damage: Damage,
     adaptive: Decoder,
     zlib: Stream,
     zrle: Stream,
@@ -86,6 +101,7 @@ impl Canvas {
             width: 0,
             height: 0,
             pixels: Vec::new(),
+            damage: Damage::default(),
             adaptive: Decoder::new(),
             zlib: Stream::new(),
             zrle: Stream::new(),
@@ -101,6 +117,10 @@ impl Canvas {
         self.height = height;
         self.pixels = vec![BLACK; width * height];
         self.adaptive.resize(width, height);
+        self.damage = Damage {
+            resized: true,
+            rects: Vec::new(),
+        };
     }
 
     pub fn width(&self) -> usize {
@@ -115,6 +135,28 @@ impl Canvas {
         &self.pixels
     }
 
+    /// What changed since the last call, for the window to upload.
+    pub fn take_damage(&mut self) -> Damage {
+        std::mem::take(&mut self.damage)
+    }
+
+    fn damaged(&mut self, (x, y, w, h): Rect) {
+        let right = (x + w).min(self.width);
+        let bottom = (y + h).min(self.height);
+        if self.damage.resized || x >= right || y >= bottom {
+            return;
+        }
+        let rects = &mut self.damage.rects;
+        rects.push((x, y, right - x, bottom - y));
+        if rects.len() > MAX_RECTS {
+            let left = rects.iter().map(|r| r.0).min().unwrap_or(0);
+            let top = rects.iter().map(|r| r.1).min().unwrap_or(0);
+            let right = rects.iter().map(|r| r.0 + r.2).max().unwrap_or(0);
+            let bottom = rects.iter().map(|r| r.1 + r.3).max().unwrap_or(0);
+            *rects = vec![(left, top, right - left, bottom - top)];
+        }
+    }
+
     /// Decode one rectangle's body onto the framebuffer: for the codecs whose
     /// body starts with a `u32` length, the bytes after it. Returns whether it
     /// drew.
@@ -125,6 +167,7 @@ impl Canvas {
             let result = self.adaptive.decode(x, y, w, h, body);
             if !matches!(result, Ok(false)) {
                 self.copy_from_adaptive(x, y, w, h);
+                self.damaged((usize::from(x), usize::from(y), usize::from(w), usize::from(h)));
             }
             return result.map_err(Error::Adaptive);
         }
@@ -143,12 +186,14 @@ impl Canvas {
         if rect.0 + rect.2 > self.width || rect.1 + rect.3 > self.height {
             return Err(Error::Bounds { x, y, w, h });
         }
-        if encoding == ZRLE {
+        let drawn = if encoding == ZRLE {
             zrle::draw(data, rect, &mut self.pixels, self.width)
-                .map_err(|message| Error::Data { encoding, message })?;
         } else {
-            draw_bgrx(data, rect, &mut self.pixels, self.width).map_err(|message| Error::Data { encoding, message })?;
-        }
+            draw_bgrx(data, rect, &mut self.pixels, self.width)
+        };
+        // Damaged even if the pixels failed half way: they drew that far.
+        self.damaged(rect);
+        drawn.map_err(|message| Error::Data { encoding, message })?;
         Ok(true)
     }
 
@@ -198,6 +243,41 @@ mod tests {
 
     const RED: u32 = 0xff00_00ff;
     const GREEN: u32 = 0xff00_ff00;
+
+    #[test]
+    fn drawing_records_damage_and_a_resize_replaces_it() {
+        let mut canvas = Canvas::new(4, 4);
+        assert!(canvas.take_damage().resized);
+        canvas.decode(RAW, 1, 1, 1, 1, &[0; 4]).unwrap();
+        assert_eq!(
+            canvas.take_damage(),
+            Damage {
+                resized: false,
+                rects: vec![(1, 1, 1, 1)]
+            }
+        );
+        assert_eq!(canvas.take_damage(), Damage::default());
+        canvas.decode(RAW, 1, 1, 1, 1, &[0; 4]).unwrap();
+        canvas.resize(2, 2);
+        assert_eq!(
+            canvas.take_damage(),
+            Damage {
+                resized: true,
+                rects: vec![]
+            }
+        );
+    }
+
+    #[test]
+    fn too_many_damaged_rectangles_merge_into_their_union() {
+        let mut canvas = Canvas::new(4, 4);
+        canvas.take_damage();
+        canvas.decode(RAW, 3, 3, 1, 1, &[0; 4]).unwrap();
+        for _ in 0..MAX_RECTS {
+            canvas.decode(RAW, 0, 1, 1, 1, &[0; 4]).unwrap();
+        }
+        assert_eq!(canvas.take_damage().rects, vec![(0, 1, 4, 3)]);
+    }
 
     #[test]
     fn a_new_canvas_is_opaque_black() {

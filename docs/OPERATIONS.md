@@ -26,9 +26,23 @@ Mac's capture has its keys and clicks wait until the screen stops changing, beca
 Mac reads nothing while it writes ([protocol.md](protocol.md#what-arming-does)). The cost
 of an interval is that a moving window arrives in strips captured at different moments.
 
+## The window
+
+- **Frames follow changes.** A still screen draws nothing. A change wakes the window,
+  which uploads every rectangle changed since the last frame and draws once, so it
+  draws fewer frames than the Mac sends updates: a moving window comes as strips
+  milliseconds apart, and one frame takes them all. Drawing never holds up reading.
+- **Scaling.** The picture is shown as large as the window allows, keeping its aspect,
+  at one to one when the window is the framebuffer's size; the window opens that size
+  when the screen has room, smaller when not.
+- **Without a GPU**, wgpu draws with the system's software renderer (WARP on Windows).
+  On a Windows VM at 1024×768 it showed a 1440×900 Mac scaled to fit, live
+  ([measurements.md](measurements.md#pomona-live)).
+
 ## How a session ends
 
 - **`close()`** sends what was already queued, then hangs up. `error` stays None.
+  Closing the window does the same.
 - **The Mac hangs up**, for example when its user ends the session: `error` says the Mac
   closed the connection.
 - **The connection fails**: `error` holds the `OSError`.
@@ -70,3 +84,8 @@ none comes, check the Mac's own log, over ssh on the Mac (the full path, since z
 
 **Low update rates.** Compare over the same path only: every ssh hop adds latency, and
 the Mac paces itself by how fast its socket drains ([measurements.md](measurements.md)).
+
+**"no graphics adapter can draw to the window", or "the window cannot be drawn to".**
+Pomona found no D3D12 (Windows) or Metal (macOS) device for the window. On Windows, a
+process without a desktop cannot draw: an ssh session runs in session 0, which has none.
+Run Pomona in a desktop session.

@@ -80,6 +80,10 @@ class Session:
         self._records_out = RecordWriter(*keys)
         self._parser = stream.Parser()
         self._cursors = CursorCache()
+        # The client's pixels per point, once a window says, and the scale
+        # asked of the Mac and not yet confirmed by a layout.
+        self._client_scale: float | None = None
+        self._scale_asked: float | None = None
         self._outbox: queue.SimpleQueue[bytes | None] = queue.SimpleQueue()
         self._closed = threading.Event()
         self._closing = threading.Lock()
@@ -116,6 +120,7 @@ class Session:
             self._closed.set()
         if ending:
             self._outbox.put(None)
+        self.picture.quit()
         reader, writer = self._threads
         if writer is not threading.current_thread():
             # The writer stops at the end of the queue; a Mac that reads
@@ -154,6 +159,37 @@ class Session:
             pulse = _WHEEL_DOWN if dy > 0 else _WHEEL_UP
             self._send(messages.pointer_event(pulse, x, y))
             self._send(messages.pointer_event(0, x, y))
+
+    def set_client_scale(self, scale: float) -> None:
+        """Tell the session the client's pixels per point, so that a Retina
+        Mac sends its screen at the client's density rather than its own."""
+        self._client_scale = scale
+        self._rescale()
+
+    def _rescale(self) -> None:
+        """Ask the Mac for `min(1, client density / Mac density)`, as Apple's
+        viewer does, once a layout has said what the Mac's density is."""
+        if (
+            self._client_scale is None
+            or self.layout is None
+            or not self.layout.displays
+        ):
+            return
+        shown = [
+            d
+            for d in self.layout.displays
+            if self.layout.current is None or d.id == self.layout.current
+        ] or list(self.layout.displays)
+        density = max(d.density for d in shown)
+        if density <= 0:
+            return
+        factor = min(1.0, self._client_scale / density)
+        if abs(factor - self.layout.server_scale) < 0.01:
+            self._scale_asked = None
+        elif self._scale_asked is None or abs(factor - self._scale_asked) >= 0.01:
+            log.info("asking the Mac to scale its screen by %g", factor)
+            self._scale_asked = factor
+            self._send(messages.set_server_scaling(factor))
 
     def _unscaled(self, x: int, y: int) -> tuple[int, int]:
         """The Mac reads positions in its unscaled framebuffer's pixels."""
@@ -247,6 +283,9 @@ class Session:
             return
         if shape is not None:
             self.cursor = shape
+            self.picture.set_cursor(
+                shape.width, shape.height, *shape.hotspot, shape.rgba
+            )
 
     def _apply_layout(self, new: layout.Layout) -> None:
         log.info(
@@ -259,6 +298,7 @@ class Session:
         if (new.width, new.height) != (self.picture.width, self.picture.height):
             self.picture.resize(new.width, new.height)
         self.layout = new
+        self._rescale()
 
     def _arm(self) -> None:
         width, height = self.picture.width, self.picture.height
@@ -275,6 +315,7 @@ class Session:
                 return
             self._closed.set()
         self._outbox.put(None)
+        self.picture.quit()
         self._hang_up()
 
     def _hang_up(self) -> None:

@@ -25,7 +25,7 @@ pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--quality adaptive|ful
 | --- | --- |
 | `HOST[:PORT]` | the Mac; port 5900 by default. IPv6 as `[::1]` or `[::1]:5901`. |
 | `-u`, `--user` | the macOS account to sign in as |
-| `--probe SECONDS` | receive for that long without a window, then print what arrived |
+| `--probe SECONDS` | instead of a window: receive for that long, then print what arrived |
 | `--quality` | `adaptive` (the default): Apple's tiles, coarse first and refined after; `full`: lossless zlib, about ten times the traffic |
 | `--push-interval US` | pace the Mac's updates, in microseconds; 0 (the default) is as fast as it captures |
 | `-v`, `-vv` | log more, to stderr |
@@ -35,8 +35,13 @@ The password comes from the environment variable `POMONA_PASSWORD`, or is asked 
 without echo. Pomona never takes it from the command line, and does not read it from a
 pipe on stdin.
 
-The window is not there yet, so for now `--probe` is required. Its report gives the
-rate, the bandwidth, when the first picture came, and the rectangles per encoding:
+Without `--probe`, Pomona opens a window showing the Mac's screen, scaled to fit the
+window and keeping its aspect. Closing the window ends the session, and the session
+ending closes the window. With `-v` it logs, at the end, the updates received and the
+frames drawn. Keyboard and mouse do not reach the Mac yet.
+
+`--probe` reports the rate, the bandwidth, when the first picture came, and the
+rectangles per encoding:
 
 ```text
 signed in: 1440x900 'NoMac'
@@ -47,8 +52,8 @@ first picture after 3.14 s
 updates per second: [0, 0, 3, 52, 17, ...]
 ```
 
-It exits 0 when the session ran to the end, 1 when it failed or the sign-in was
-refused, and 2 for a usage error.
+It exits 0 when the session ran to the end or the window was closed, 1 when it failed,
+the sign-in was refused or no window could be opened, and 2 for a usage error.
 
 ## The library
 
@@ -103,3 +108,24 @@ All of Pomona's own errors derive from `PomonaError`.
 - Input never blocks; anything sent after the session ended is dropped.
 - Pomona logs through the `logging` module under the `pomona` logger, and prints
   nothing.
+
+### `run_window`
+
+```python
+from pomona import connect, run_window
+
+session = connect("127.0.0.1", 5901, user="me", password=password)
+run_window(session, title="My Mac")  # returns when the window closes
+```
+
+`run_window(session, *, title=None)` shows the session's screen in a window until the
+window is closed or the session ends, and then closes the session.
+
+- It runs on the calling thread, which on macOS must be the main thread. The session's
+  own threads go on meanwhile; `on_update` still runs on the reader thread.
+- A process can open one window in its life, a limit of winit's event loop.
+- It raises `RuntimeError` when no window or graphics adapter can be had. A machine
+  without a GPU uses the system's software renderer.
+- `session.set_client_scale(scale)`, which the window calls with its pixels per point,
+  makes a Retina Mac send its screen at that density.
+- `session.picture.frames` counts the frames the window has drawn.

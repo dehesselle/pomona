@@ -28,12 +28,15 @@ src/pomona/                   Python
   layout.py    the display layout
   cursor.py    the pointer's shapes
   messages.py  everything sent to the Mac, as bytes
+  window.py    run_window(): a session in a window
   cli.py       the `pomona` command
 crates/pomona-native/         Rust: pomona._native
   canvas.rs    the framebuffer every codec draws on
   inflate.rs   a deflate stream that lasts the session
   zrle.rs      ZRLE's tiles
-  picture.rs   Picture, the canvas as Python sees it
+  picture.rs   Picture, the canvas as Python sees it, and run_window
+  window.rs    the window: winit's event loop, wake-ups, the cursor
+  gpu.rs       wgpu: the texture, uploads, drawing
 crates/apple-adaptive/        Rust: zDesk's Adaptive decoder, unchanged
 ```
 
@@ -52,7 +55,8 @@ A session has two threads of its own, and the caller's.
 - **The writer** sends whatever is queued for the Mac, in order, through the record
   layer's sending side. Everything the session sends goes through its queue, so the
   sequence numbers stay in step.
-- **The caller** sends input by queueing it, which never blocks.
+- **The caller** sends input by queueing it, which never blocks. With a window, the
+  caller is the window's event loop, on the thread that called `run_window`.
 
 This split follows from the Mac: it reads nothing while it writes an update, and at push
 interval 0 it writes updates for as long as the screen changes. A viewer that stops
@@ -76,21 +80,43 @@ decodes them in Python.
 The canvas is a mutex, not Python's borrow checking, so that the reader can decode
 with the GIL released while another thread reads the picture.
 
-## The window (not built yet)
+## The window
 
-The window will live in the Rust extension, with **winit** for the window and input and
+The window lives in the Rust extension: **winit** for the window and its events,
 **wgpu** (D3D12 and Metal only) to show the canvas as a texture. The reasons:
 
-- Decoded pixels then never pass through Python: the window uploads the canvas's
-  changed rectangles straight into the texture.
+- Decoded pixels never pass through Python: the window uploads the canvas's changed
+  rectangles straight into the texture.
 - The GPU scales for free, which a window smaller or denser than the framebuffer needs.
 - No large framework: Qt was ruled out; wgpu-py with glfw would work too, but would hand
   every frame through Python.
 
-`run_window` is to take the main thread, as macOS requires of a window, release the GIL,
-and call back into Python only for input. Input goes out as X11 keysyms and positions in
-framebuffer pixels; the session applies the Mac's rules. Keyboard grab on Windows is a
-low-level keyboard hook; the clipboard is `arboard`.
+How it runs:
+
+- `run_window` runs winit's event loop on the calling thread with the GIL released,
+  and takes the GIL only to tell Python about the window (`on_event`). macOS requires
+  the main thread; Windows does not, so the loop is allowed on any thread there. winit
+  allows one event loop per process, so a process opens one window in its life.
+- The canvas records which rectangles changed. Decoding wakes the loop through the
+  picture's waker; wake-ups coalesce, one outstanding at a time, and the loop uploads
+  everything that changed since the last upload. A burst of strips from the Mac
+  therefore costs one frame, not one per strip.
+- The picture is drawn by one triangle sampling the texture, as large as fits, centred
+  and on whole pixels, over a dark grey letterbox. Linear filtering is exact at one to
+  one and smooth when scaled.
+- With no GPU, wgpu takes the system's software adapter (WARP on Windows), which is
+  enough for a framebuffer this size.
+- wgpu reports errors to a handler that would panic by default. Pomona's handler keeps
+  the first error, and the window ends with a `RuntimeError` instead.
+- The Mac's pointer shapes become the window's cursor.
+- The session closes the window when it ends, and closing the window ends the session.
+- When the window says its scale (pixels per point), the session asks a Retina Mac for
+  `min(1, client scale / Mac density)` with `SetServerScaling`, as Apple's viewer does,
+  so the Mac sends its screen at the client's density.
+
+Input is next: winit's events go out as X11 keysyms and positions in framebuffer pixels;
+the session applies the Mac's rules. Keyboard grab on Windows is to be a low-level
+keyboard hook; the clipboard `arboard`.
 
 ## Build and version
 
@@ -148,3 +174,8 @@ taking.
 9. **Pomona opens no listening sockets.**
 10. **Code from other projects stays in its own package, unchanged where possible,** so
     an update is a copy and its origin stays visible.
+11. **The window's event loop holds the GIL only while it calls into Python,** because
+    the reader thread needs the GIL to go on parsing; a loop that kept it would stall
+    the Mac's input as surely as a reader that stopped reading.
+12. **Errors in the extension come out as exceptions, never panics,** wgpu's included,
+    because a panic in the window would tear through the caller's Python.

@@ -20,8 +20,16 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pomona.errors import AuthenticationError, PomonaError, ProtocolError
     from pomona.session import Session, connect
+    from pomona.window import run_window
 
-__all__ = ["AuthenticationError", "PomonaError", "ProtocolError", "Session", "connect"]
+__all__ = [
+    "AuthenticationError",
+    "PomonaError",
+    "ProtocolError",
+    "Session",
+    "connect",
+    "run_window",
+]
 
 _LAZY = {
     "connect": "pomona.session",
@@ -29,6 +37,7 @@ _LAZY = {
     "AuthenticationError": "pomona.errors",
     "PomonaError": "pomona.errors",
     "ProtocolError": "pomona.errors",
+    "run_window": "pomona.window",
 }
 
 
@@ -61,7 +70,7 @@ def main(argv: list[str] | None = None) -> None:
         "--probe",
         type=float,
         metavar="SECONDS",
-        help="no window: receive for SECONDS and print what arrived",
+        help="instead of a window: receive for SECONDS and print what arrived",
     )
     parser.add_argument(
         "--quality",

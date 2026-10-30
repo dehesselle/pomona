@@ -2,11 +2,14 @@
 //
 // SPDX-License-Identifier: MIT
 
-//! `pomona._native`: the parts of Pomona that are too slow in Python.
+//! `pomona._native`: the parts of Pomona that are too slow in Python, and the
+//! window.
 
 pub mod canvas;
+mod gpu;
 pub mod inflate;
 mod picture;
+mod window;
 pub mod zrle;
 
 use pyo3::prelude::*;
@@ -14,6 +17,7 @@ use pyo3::prelude::*;
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<picture::Picture>()?;
+    m.add_function(wrap_pyfunction!(picture::run_window, m)?)?;
     m.add("StreamError", m.py().get_type::<picture::StreamError>())?;
     m.add("RAW", canvas::RAW)?;
     m.add("ZLIB", canvas::ZLIB)?;

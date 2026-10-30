@@ -63,3 +63,21 @@ socket drains, and the two ssh hops add latency and flow-control windows. These 
 show that the protocol works, not how fast Pomona is: compare rates only over the same
 path. The first picture includes the sign-in's 0.56 s and the round trips of the longer
 path.
+
+### In a window
+
+Measured on 2026-10-30 with Pomona's window on a Clouding Windows VM (Windows Server
+2025, 8 vCPU, no GPU: wgpu drew with D3D12's software renderer, WARP) in its 1024×768
+console session, against a NoMac Mac with the same scrolling Terminal, for 20 s. The path
+was Mac → NoMac's gateway → qem's forward on a Windows PC → an ssh reverse
+forward → the VM in Spain.
+
+| Quality | Updates/s | Frames drawn/s | Bandwidth |
+| --- | --- | --- | --- |
+| Adaptive | 8.7 | 4.2 | 0.46 Mbit/s |
+| Full (zlib) | 7.4 | 4.0 | 5.16 Mbit/s |
+
+The picture, 1440×900 scaled to fit the window at 0.64, was correct and its text
+readable. A frame takes in every update that arrived before it, so frames are fewer than
+updates. The update rate is again the path's; nothing here measures what the window
+could draw.

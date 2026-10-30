@@ -7,22 +7,7 @@ the other documents.
 Every step ends with its tests passing on a devbox, and live against a NoMac Mac where
 the Mac is involved.
 
-## 1. The window
-
-- A winit window in the Rust extension, showing the canvas through wgpu (D3D12, Metal):
-  only the changed rectangles are uploaded, and the picture is scaled to fit, keeping
-  its aspect ([DESIGN.md](DESIGN.md#the-window-not-built-yet)).
-- HiDPI, with `SetServerScaling` at `min(1, client density / Mac density)`.
-- The Mac's pointer shapes as the window's cursor.
-- `pomona.run_window(session)`, and `pomona HOST -u USER` opening the window by default.
-- Built and tried on Windows first, on a Clouding devbox over RDP. It has no GPU, so wgpu
-  runs on D3D12's software adapter (WARP); check that early.
-
-Questions: how many of the updates received are painted; how Adaptive looks while it
-moves and refines (text while scrolling); how to build and try it on macOS, where no
-devbox runs. A NoMac Mac is the likely place.
-
-## 2. Input
+## 1. Input
 
 - Keys from winit as X11 keysyms, with the Mac's rules: lowercase under Caps Lock, Alt
   sent as Meta (Option), the Windows key as Super (Command), Ctrl as Command optional.
@@ -33,6 +18,17 @@ devbox runs. A NoMac Mac is the likely place.
 - Live: typing, clicking and scrolling in TextEdit.
 
 Question: does the keyboard grab work with winit's event loop?
+
+## 2. The window on macOS, and on Retina
+
+- Build and try the window on macOS. No devbox runs macOS; a NoMac Mac is the likely
+  place, showing another NoMac Mac or itself.
+- Check `SetServerScaling` live against a Retina Mac (NoMac's Macs are 1x), and the
+  pointer's shape on a HiDPI client, where it is drawn at its size in points and so
+  looks small.
+- Measure what the window can draw, apart from the path: a paced replay of a capture.
+
+Question: how does Adaptive look while it moves and refines (text while scrolling)?
 
 ## 3. Pasteboard and polish
 

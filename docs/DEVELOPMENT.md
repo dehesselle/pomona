@@ -5,11 +5,12 @@ How to build, test and lint Pomona, and how code from other projects is kept in 
 ## Layout
 
 - `src/pomona/`: the Python package: protocol, session, CLI.
-- `crates/pomona-native/`: the Rust extension, imported as `pomona._native`. maturin
-  builds it from `pyproject.toml`.
+- `crates/pomona-native/`: the Rust extension, imported as `pomona._native`: decoding
+  and the window. maturin builds it from `pyproject.toml`.
 - `crates/apple-adaptive/`: zDesk's Adaptive decoder, taken over unchanged (see
   [Code from other projects](#code-from-other-projects)).
 - `tests/`: pytest tests and their recorded fixtures.
+- `tools/`: scripts for trying things by hand on a devbox (`window_check.py`).
 
 ## Where to build and test
 
@@ -88,6 +89,73 @@ reuse lint
 ```
 
 rustfmt runs on our crate only, because `apple-adaptive` keeps upstream's formatting.
+
+## Trying the window
+
+The window is tried on a Windows devbox at Clouding. It has no GPU; wgpu draws with
+D3D12's software renderer.
+
+**Setting the box up.** Rust's MSVC target needs Microsoft's C++ build tools, and the
+image has no package manager, so everything comes from its own installer:
+
+```powershell
+Invoke-WebRequest https://aka.ms/vs/17/release/vs_BuildTools.exe -OutFile vs_BuildTools.exe
+.\vs_BuildTools.exe --quiet --wait --norestart --nocache `
+  --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended
+Invoke-WebRequest https://win.rustup.rs/x86_64 -OutFile rustup-init.exe
+.\rustup-init.exe -y --profile minimal -c clippy,rustfmt
+rustup default stable
+irm https://astral.sh/uv/install.ps1 | iex
+```
+
+In Windows PowerShell 5.1, a native program's stderr becomes an error record, so a script
+with `$ErrorActionPreference = "Stop"` ends at the first warning. Redirect with `*>` to
+a file instead.
+
+**Copying the tree.** Pack it into a file and copy that with `scp`: binary piped through
+an ssh session into PowerShell 5.1 is not safe. GNU tar reads `C:` in a file name as a
+host, so redirect its output (`tar -cf - . > pomona.tar`) rather than naming the file.
+The box's own `tar -xf` unpacks it.
+
+**A desktop to draw on.** An ssh session runs in session 0, which has no desktop: the
+window fails with "the window cannot be drawn to". Turn on auto-logon and restart, and the
+box keeps a console session with a desktop:
+
+```powershell
+$k = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+Set-ItemProperty $k AutoAdminLogon '1'
+Set-ItemProperty $k DefaultUserName 'Administrator'
+Set-ItemProperty $k DefaultDomainName '.'
+Set-ItemProperty $k DefaultPassword '<the box password>'
+shutdown /r /t 2
+```
+
+This keeps the box's password in its registry, which is fine for a throwaway box only.
+`query user` then shows `administrator  console  Active`. Run things in that session with
+a scheduled task, `/it` for interactive, and wait for a file the task writes at the end:
+
+```powershell
+schtasks /create /tn window-check /tr "C:\setup\check.cmd" /sc once /st 23:59 /ru Administrator /it /f
+schtasks /run /tn window-check
+```
+
+`tools/window_check.py` opens the window against the fake Mac replaying a fixture, or a
+real Mac's port, and prints the updates received and the frames drawn. With `--shot` it
+saves a screenshot to look at:
+
+```sh
+uv run python tools/window_check.py --fixture zlib.rfb --quality full --seconds 6 --shot C:\setup\shot.png
+uv run python tools/window_check.py --port 15900 --seconds 20 --shot C:\setup\shot.png
+```
+
+The fake Mac ends the session after 5 s without traffic. Over RDP, the same window can be
+used by hand.
+
+**A live Mac on the box.** qem runs on the PC, so the box reaches the Mac through it:
+`qem ssh --forward 15900:5900` on the PC, then
+`ssh -F .devbox/ssh_config -N -R 127.0.0.1:15900:127.0.0.1:15900 clouding-windows`. A
+scheduled task does not inherit the ssh session's environment, so hand it the password in
+a file it reads once and deletes.
 
 ## Code from other projects
 

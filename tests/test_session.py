@@ -5,6 +5,7 @@
 """A whole session against the fake Mac: sign-in, record layer, replay."""
 
 import hashlib
+import struct
 import threading
 from pathlib import Path
 
@@ -128,9 +129,10 @@ def test_the_session_ends_when_the_mac_hangs_up():
     mac = fakemac.FakeMac(FIXTURE[:5000], hang_up=True)
     session = connect_to(mac)
     assert session.wait(10)
-    # A clean end of stream, or a reset when our last messages went unread.
+    # A clean end of stream, or, when our last messages went unread, a reset
+    # (Linux) or an abort (Windows).
     assert "closed the connection" in str(session.error) or isinstance(
-        session.error, ConnectionResetError
+        session.error, ConnectionError
     )
     session.close()
     mac.join()
@@ -144,3 +146,32 @@ def test_closing_ends_the_session_without_an_error():
     mac.join()
     assert session.closed
     assert session.error is None
+
+
+def test_a_retina_mac_is_asked_once_to_scale_to_the_client():
+    from test_layout import record
+
+    body = struct.pack(
+        ">HHHHHIIH", 5, 1440, 900, 2880, 1800, 0xFFFFFFFF, 4, 1
+    ) + record(2.0, 1.0, 1, (0, 0, 1440, 900), (0, 0, 2880, 1800))
+    layout_update = (
+        struct.pack(">BxH", 0, 1)
+        + struct.pack(">HHHHi", 0, 0, 0, 0, stream.DISPLAY_LAYOUT)
+        + struct.pack(">H", len(body))
+        + body
+    )
+    mac = fakemac.FakeMac(layout_update)
+    with connect_to(mac) as session:
+        for _ in range(100):
+            if session.layout is not None:
+                break
+            threading.Event().wait(0.05)
+        assert (session.picture.width, session.picture.height) == (2880, 1800)
+        session.set_client_scale(1.25)
+        session.set_client_scale(1.25)
+    mac.join()
+    assert mac.received[2:] == [
+        messages.auto_framebuffer_update(0, 2880, 1800),
+        messages.framebuffer_update_request(False, 0, 0, 2880, 1800),
+        messages.set_server_scaling(0.625),
+    ]
