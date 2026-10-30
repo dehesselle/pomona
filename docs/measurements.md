@@ -81,3 +81,22 @@ The picture, 1440×900 scaled to fit the window at 0.64, was correct and its tex
 readable. A frame takes in every update that arrived before it, so frames are fewer than
 updates. The update rate is again the path's; nothing here measures what the window
 could draw.
+
+## Latency
+
+Measured on 2026-10-30 from a Windows PC in Germany to a NoMac Mac, whose connection
+leaves from England, through qem's forward: ssh over a WebSocket to NoMac's gateway
+in Ashburn, Virginia.
+
+| Path | Round trip |
+| --- | --- |
+| The PC to the gateway (TCP connect) | 95 ms |
+| The Mac to the gateway (TCP connect) | 85 ms |
+| The PC to the Mac's Screen Sharing through the forward (until its greeting) | 215 ms |
+
+Every key and click through that path waits about 215 ms for its echo, before Pomona
+draws a thing, and a viewer feels it. Pacing the Mac's pushes (`--push-interval`) made it
+no snappier, only choppier: the delay is the route's, not a backlog.
+
+Against a Mac on the same LAN, and one reached directly over the internet, Pomona felt
+as fast as Apple's own viewer (the user's report, not measured).
