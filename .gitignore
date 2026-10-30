@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: MIT
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -8,3 +12,12 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Rust and the built extension
+target/
+*.pyd
+*.so
+
+# Research material (about 109 MB); what Pomona needs from it is taken into
+# docs/ and tests/fixtures/
+/research/

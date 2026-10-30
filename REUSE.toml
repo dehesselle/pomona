@@ -1,0 +1,22 @@
+version = 1
+
+# Files that can't carry an SPDX comment, or shouldn't: docs stay clean when
+# rendered, the lockfiles are regenerated, the fixtures are recorded bytes.
+[[annotations]]
+path = [
+    "**.md",
+    "uv.lock",
+    "Cargo.lock",
+    ".python-version",
+    "justfile",
+    "tests/fixtures/**",
+]
+SPDX-FileCopyrightText = "2026 René de Hesselle <dehesselle@web.de>"
+SPDX-License-Identifier = "MIT"
+
+# zDesk's decoder, kept byte for byte as upstream has it (see
+# crates/apple-adaptive/Cargo.toml).
+[[annotations]]
+path = "crates/apple-adaptive/src/decoder.rs"
+SPDX-FileCopyrightText = "2026 Andrew Chen"
+SPDX-License-Identifier = "MIT"

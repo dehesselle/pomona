@@ -1,11 +1,16 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: MIT
+
 [project]
 name = "pomona"
-version = "0.1.0"
-description = "Add your description here"
+# From Cargo.toml's workspace version, through crates/pomona-native.
+dynamic = ["version"]
+description = "A viewer for Apple Screen Sharing, in Standard mode over plain TCP"
 readme = "README.md"
-authors = [
-    { name = "René de Hesselle", email = "dehesselle@web.de" }
-]
+license = "MIT"
+license-files = ["LICENSE", "LICENSES/*", "crates/apple-adaptive/LICENSE"]
+authors = [{ name = "René de Hesselle", email = "dehesselle@web.de" }]
 requires-python = ">=3.12"
 dependencies = []
 
@@ -13,5 +18,36 @@ dependencies = []
 pomona = "pomona:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "crates/pomona-native/Cargo.toml"
+python-source = "src"
+module-name = "pomona._native"
+features = ["pyo3/extension-module"]
+
+[tool.uv]
+# Rebuild the extension on `uv sync`/`uv run` when the Rust side changes.
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+    { file = "crates/**/Cargo.toml" },
+    { file = "crates/**/*.rs" },
+]
+
+[dependency-groups]
+dev = ["pytest>=9.1.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+# Ruff comes from outside the project, and its defaults change between minor
+# releases; bump this once a new minor's findings have been reviewed.
+required-version = "~=0.16.0"
+
+[tool.ruff.lint.isort]
+# The extension, pomona._native, has no source file for ruff to find.
+known-first-party = ["pomona"]

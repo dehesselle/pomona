@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: MIT
+
+# zDesk's decoder for a Mac's Adaptive picture (encoding 0x3f3), taken from
+# zDesk (https://github.com/andrewtheguy/zdesk) at 2072baf3, file
+# frontend/wasm/apple-adaptive/src/decoder.rs. decoder.rs is kept byte for
+# byte as upstream has it, so an update is a plain copy; zDesk's wasm binding
+# is left behind, and lib.rs only re-exports the decoder.
+[package]
+name = "apple-adaptive"
+version = "0.0.0"
+license = "MIT"
+edition.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"

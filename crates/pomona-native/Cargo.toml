@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: MIT
+
+# The Rust helper behind the Python package, imported as pomona._native:
+# the session's picture and its decoders. Built by maturin (see pyproject.toml),
+# which turns on pyo3/extension-module; plain cargo builds leave it off so
+# `cargo test` can link.
+[package]
+name = "pomona-native"
+version.workspace = true
+license = "MIT"
+edition.workspace = true
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+apple-adaptive = { path = "../apple-adaptive" }
+pyo3 = { version = "0.30.1", features = ["abi3-py312"] }
