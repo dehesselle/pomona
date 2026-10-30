@@ -44,3 +44,13 @@ sign-in exactly as it refuses a wrong password.
 - [docs/high-performance.md](docs/high-performance.md): why High Performance mode does
   not work through ssh
 - [docs/roadmap.md](docs/roadmap.md): what is still to be built, in order
+
+## AI disclosure
+
+Substantial parts of this code were generated with Opus 5.x. Generated code was
+tested, but not every line was reviewed in detail.
+
+## License
+
+[MIT](LICENSE). `crates/apple-adaptive` is zDesk's Adaptive decoder by Andrew Chen,
+under [its own copyright notice](crates/apple-adaptive/LICENSE).
