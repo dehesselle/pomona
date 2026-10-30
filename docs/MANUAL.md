@@ -17,7 +17,8 @@ with at least Observe and Control. See [OPERATIONS.md](OPERATIONS.md#troubleshoo
 ## The command
 
 ```text
-pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--push-interval US] [-v]
+pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--quality adaptive|full]
+       [--push-interval US] [-v]
 ```
 
 | Option | |
@@ -25,6 +26,7 @@ pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--push-interval US] [-
 | `HOST[:PORT]` | the Mac; port 5900 by default. IPv6 as `[::1]` or `[::1]:5901`. |
 | `-u`, `--user` | the macOS account to sign in as |
 | `--probe SECONDS` | receive for that long without a window, then print what arrived |
+| `--quality` | `adaptive` (the default): Apple's tiles, coarse first and refined after; `full`: lossless zlib, about ten times the traffic |
 | `--push-interval US` | pace the Mac's updates, in microseconds; 0 (the default) is as fast as it captures |
 | `-v`, `-vv` | log more, to stderr |
 | `--version` | print the version |
@@ -65,7 +67,7 @@ connect(host, port=5900, *, user, password, quality="adaptive",
         push_interval_us=0, timeout=15.0, on_update=None) -> Session
 ```
 
-Signs in and starts a Standard session. `quality` is `"adaptive"` for now. `timeout`
+Signs in and starts a Standard session. `quality` is `"adaptive"` or `"full"`. `timeout`
 covers the connection and the handshake. It raises:
 
 - `AuthenticationError` when the Mac refuses the sign-in, which is a wrong user name or
@@ -83,6 +85,8 @@ All of Pomona's own errors derive from `PomonaError`.
 | `picture` | the framebuffer: `width`, `height`, `snapshot()` |
 | `server` | the ServerInit: `width`, `height`, `name`, `flags`, `accepts(message_type)` |
 | `layout` | the Mac's last display layout, or None before the first |
+| `cursor` | the pointer's shape: `width`, `height`, `hotspot`, `rgba`; None until the Mac sends one |
+| `cursor_position` | where the Mac last put the pointer, or None |
 | `bytes_received` | bytes read off the connection so far |
 | `on_update` | called with each `stream.FramebufferUpdate` once it is drawn |
 | `closed`, `wait(timeout)` | whether the session has ended; wait for it to end |

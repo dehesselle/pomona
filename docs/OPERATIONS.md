@@ -35,9 +35,12 @@ of an interval is that a moving window arrives in strips captured at different m
 - **The stream cannot be read**: an unknown message, an unknown encoding, a record that
   fails its integrity check, or a second rekey end the session with a `ProtocolError`,
   because nothing after them can be trusted.
-- **A rectangle that does not decode** does not end it: the stream's framing is intact,
-  the picture keeps what was drawn, and the next update paints over the gap. It is
-  logged as a warning.
+- **A zlib or ZRLE rectangle that does not inflate** ends it with a `ProtocolError`:
+  every rectangle is inflated on what the ones before it left, so the rest of the
+  picture is lost with it.
+- **Any other rectangle that does not decode** does not end it: the stream's framing is
+  intact, the picture keeps what was drawn, and the next update paints over the gap. A
+  pointer shape that does not decode leaves the old shape. Both are logged as warnings.
 
 ## Troubleshooting
 

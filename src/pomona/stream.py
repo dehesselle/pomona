@@ -202,7 +202,7 @@ class Parser:
         if encoding in _NO_BODY:
             return 0, start
         if encoding == CURSOR_IMAGE:
-            # u32 raw length, u32 compressed length, the compressed bytes
+            # u32 cache id, u32 compressed length, the compressed bytes
             if start + 8 > len(buffer):
                 return None
             return 0, start + 8 + _U32.unpack_from(buffer, start + 4)[0]

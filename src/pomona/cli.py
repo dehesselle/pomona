@@ -47,15 +47,13 @@ def run(args: argparse.Namespace) -> int:
         f"Password for {args.user} at {host}: "
     )
     try:
-        return _probe(host, port, args.user, password, args.probe, args.push_interval)
+        return _probe(host, port, password, args)
     except (PomonaError, OSError) as error:
         print(f"pomona: {error}", file=sys.stderr)
         return 1
 
 
-def _probe(
-    host: str, port: int, user: str, password: str, seconds: float, push_interval: int
-) -> int:
+def _probe(host: str, port: int, password: str, args: argparse.Namespace) -> int:
     rects = collections.Counter()
     sizes = collections.Counter()
     pixels = collections.Counter()
@@ -80,16 +78,17 @@ def _probe(
     session = connect(
         host,
         port,
-        user=user,
+        user=args.user,
         password=password,
-        push_interval_us=push_interval,
+        quality=args.quality,
+        push_interval_us=args.push_interval,
         on_update=count,
     )
     with session:
         print(
             f"signed in: {session.server.width}x{session.server.height} {session.server.name!r}"
         )
-        session.wait(seconds)
+        session.wait(args.probe)
     elapsed = time.monotonic() - start
     if session.error is not None:
         print(f"session ended: {session.error}")

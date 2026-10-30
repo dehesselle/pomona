@@ -10,11 +10,19 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use pyo3::create_exception;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use crate::canvas::Canvas;
+use crate::canvas::{Canvas, Error};
+
+create_exception!(
+    _native,
+    StreamError,
+    PyValueError,
+    "A zlib or ZRLE rectangle broke its deflate stream: the ones after it cannot be read."
+);
 
 /// One session's picture: a framebuffer the Mac's rectangles draw on.
 #[pyclass(frozen, module = "pomona._native")]
@@ -56,12 +64,16 @@ impl Picture {
 
     /// Decode one rectangle onto the framebuffer and return whether it drew.
     /// `body` is what follows the rectangle's header, without the `u32` length
-    /// its codec puts first. Raises ValueError for a rectangle that does not
-    /// decode; whatever it drew before failing stays.
+    /// its codec puts first. Raises StreamError when a zlib or ZRLE stream
+    /// broke, and ValueError for any other rectangle that does not decode;
+    /// whatever it drew before failing stays.
     #[allow(clippy::too_many_arguments)]
     fn decode(&self, py: Python<'_>, encoding: i32, x: u16, y: u16, w: u16, h: u16, body: &[u8]) -> PyResult<bool> {
         py.detach(|| self.canvas().decode(encoding, x, y, w, h, body))
-            .map_err(|error| PyValueError::new_err(error.to_string()))
+            .map_err(|error| match error {
+                Error::Stream { .. } => StreamError::new_err(error.to_string()),
+                _ => PyValueError::new_err(error.to_string()),
+            })
     }
 
     /// A copy of the framebuffer: row after row, each pixel R, G, B, A.

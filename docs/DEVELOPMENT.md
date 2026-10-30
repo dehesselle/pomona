@@ -59,6 +59,12 @@ record layer came up, cut after the 196th message. `tests/test_adaptive_replay.p
 replays it and checks the framebuffer's hash at three points. Those hashes were checked
 once against an independent pure-Python port of the decoder.
 
+`tests/fixtures/zlib.rfb` and `zrle.rfb` are the same for a session listing zlib first
+and one listing ZRLE first, each cut after its last whole message before 2.4 MB: the
+whole screen, a pointer shape, then the scrolling window. `tests/test_full_replay.py`
+checks the native decoders against `tests/reference.py`, plain-Python decoders written
+apart from them, after every update.
+
 `tests/fakemac.py` stands in for a Mac. It speaks the server's side of the type-30
 sign-in, ServerInit, the prelude and the rekey, then replays a stream through the record
 layer in records of uneven sizes and keeps what the client sent. Its record layer is

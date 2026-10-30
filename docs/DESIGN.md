@@ -26,10 +26,13 @@ src/pomona/                   Python
   record.py    the record layer
   stream.py    whole server messages out of the decrypted stream
   layout.py    the display layout
+  cursor.py    the pointer's shapes
   messages.py  everything sent to the Mac, as bytes
   cli.py       the `pomona` command
 crates/pomona-native/         Rust: pomona._native
   canvas.rs    the framebuffer every codec draws on
+  inflate.rs   a deflate stream that lasts the session
+  zrle.rs      ZRLE's tiles
   picture.rs   Picture, the canvas as Python sees it
 crates/apple-adaptive/        Rust: zDesk's Adaptive decoder, unchanged
 ```
@@ -61,7 +64,14 @@ can block it ([protocol.md](protocol.md#what-arming-does)).
 `Picture` holds one RGBA framebuffer, the canvas, behind a mutex. Every codec draws on
 it, so whatever the Mac sends, there is one buffer to show. The Adaptive decoder keeps a
 framebuffer of its own, because its tiles copy from and refine what earlier rectangles
-left there; each rectangle it draws is copied onto the canvas.
+left there; each rectangle it draws is copied onto the canvas. zlib and ZRLE each keep
+one deflate stream for the session. A rectangle that fails to inflate loses its stream,
+and `Picture.decode` raises `StreamError` for it, a `ValueError` the session treats as
+the end; any other failure is a plain `ValueError` the session survives.
+
+The pointer is not part of the picture: the Mac sends its shapes separately, and the
+window is to show them as the system cursor. Shapes are few and small, so `cursor.py`
+decodes them in Python.
 
 The canvas is a mutex, not Python's borrow checking, so that the reader can decode
 with the GIL released while another thread reads the picture.

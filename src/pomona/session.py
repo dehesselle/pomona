@@ -24,7 +24,8 @@ from collections.abc import Callable
 from typing import Self
 
 from pomona import connection, layout, messages, stream
-from pomona._native import Picture
+from pomona._native import Picture, StreamError
+from pomona.cursor import Cursor, CursorCache
 from pomona.errors import PomonaError, ProtocolError
 from pomona.record import RecordReader, RecordWriter
 
@@ -35,9 +36,11 @@ LEFT = 0x01
 MIDDLE = 0x02
 RIGHT = 0x04
 
-QUALITIES = {"adaptive": messages.ADAPTIVE_ENCODINGS}
+QUALITIES = {"adaptive": messages.ADAPTIVE_ENCODINGS, "full": messages.FULL_ENCODINGS}
 
 _PICTURE_ENCODINGS = frozenset({stream.ADAPTIVE, stream.ZLIB, stream.ZRLE, stream.RAW})
+# Codecs whose one deflate stream may be lost with a rectangle that fails.
+_STREAM_ENCODINGS = frozenset({stream.ZLIB, stream.ZRLE})
 _WHEEL_UP = 0x08
 _WHEEL_DOWN = 0x10
 
@@ -46,8 +49,9 @@ class Session:
     """One Mac's screen. Made by `connect`; close it, or use it as a context
     manager.
 
-    `picture` is the framebuffer, `layout` the Mac's last display layout.
-    `on_update`, if set, is called on the reader thread with each
+    `picture` is the framebuffer, `layout` the Mac's last display layout,
+    `cursor` the pointer's shape and `cursor_position` where the Mac last put
+    it. `on_update`, if set, is called on the reader thread with each
     `stream.FramebufferUpdate` once it is drawn; keep it short.
     """
 
@@ -64,6 +68,8 @@ class Session:
         self.server = server
         self.picture = Picture(server.width, server.height)
         self.layout: layout.Layout | None = None
+        self.cursor: Cursor | None = None
+        self.cursor_position: tuple[int, int] | None = None
         self.on_update = on_update
         self.bytes_received = 0
         # Why the session ended, if it did not end by `close`.
@@ -73,6 +79,7 @@ class Session:
         self._records_in = RecordReader(*keys)
         self._records_out = RecordWriter(*keys)
         self._parser = stream.Parser()
+        self._cursors = CursorCache()
         self._outbox: queue.SimpleQueue[bytes | None] = queue.SimpleQueue()
         self._closed = threading.Event()
         self._closing = threading.Lock()
@@ -197,6 +204,10 @@ class Session:
                     self.picture.decode(
                         rect.encoding, rect.x, rect.y, rect.w, rect.h, rect.body
                     )
+                except StreamError as error:
+                    # zlib and ZRLE inflate each rectangle on the window the
+                    # ones before it left: once a piece is lost, so is the rest.
+                    raise ProtocolError(str(error)) from None
                 except ValueError as error:
                     # The framing is intact, so the session goes on and the
                     # next update paints over what this one missed.
@@ -211,6 +222,10 @@ class Session:
             elif rect.encoding == stream.DISPLAY_LAYOUT:
                 self._apply_layout(layout.parse(rect.body))
                 rearm = True
+            elif rect.encoding == stream.CURSOR_IMAGE:
+                self._apply_cursor(rect)
+            elif rect.encoding == stream.CURSOR_POS:
+                self.cursor_position = (rect.x, rect.y)
             elif rect.encoding == stream.REKEY:
                 # Records already framed under the old key would fail the
                 # Mac's check, so a rekey cannot be followed.
@@ -221,6 +236,17 @@ class Session:
             self._arm()
         if self.on_update is not None:
             self.on_update(message)
+
+    def _apply_cursor(self, rect: stream.Rect) -> None:
+        try:
+            shape = self._cursors.accept(rect.x, rect.y, rect.w, rect.h, rect.body)
+        except ProtocolError as error:
+            # Each shape is a zlib stream of its own: the pointer keeps the
+            # shape it had, and nothing after this one depends on it.
+            log.warning("%s", error)
+            return
+        if shape is not None:
+            self.cursor = shape
 
     def _apply_layout(self, new: layout.Layout) -> None:
         log.info(

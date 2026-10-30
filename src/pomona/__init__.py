@@ -64,6 +64,12 @@ def main(argv: list[str] | None = None) -> None:
         help="no window: receive for SECONDS and print what arrived",
     )
     parser.add_argument(
+        "--quality",
+        choices=("adaptive", "full"),
+        default="adaptive",
+        help="Apple's Adaptive tiles (default), or Full: lossless zlib, ten times the traffic",
+    )
+    parser.add_argument(
         "--push-interval",
         type=int,
         default=0,

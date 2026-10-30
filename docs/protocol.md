@@ -183,7 +183,7 @@ A rectangle is a `u16` x, y, w, h and an `i32` encoding, then its body:
 | `1011` Adaptive, `6` zlib, `16` ZRLE, `1000`–`1002` | `u32` length, then that many bytes |
 | `1105` layout, `1107` vendor keysyms, `1109` keyboard source | `u16` length, then that many bytes |
 | `1101` DisplayInfo | `u16` w, `u16` h, `u32` flags, `u16` count, then `0x1c` bytes per screen |
-| `1104` cursor cache | `u32` raw length, `u32` compressed length, the compressed bytes |
+| `1104` cursor cache | `u32` cache id, `u32` compressed length, the compressed bytes (see [The pointer](#the-pointer)) |
 | `1103` rekey | 36 bytes |
 | `0` Raw | w × h × 4 bytes |
 | `1100` cursor position, `−223` desktop size, `−224` last rectangle | nothing |
@@ -275,6 +275,27 @@ zDesk's document describes the bit streams in full; `decoder.rs` is the executab
 - **ZRLE**: standard RFB, one deflate stream for the session holding 64×64 tiles with
   three-byte pixels. Every tile the Mac sends is raw (subencoding 0).
 - Nothing in either adapts to the link: a slow connection takes the same bytes later.
+- A NoMac Mac opened each with the whole 1440×900 screen in one rectangle, 1.87 MB of
+  zlib or 1.62 MB of ZRLE, and sent only raw ZRLE tiles **[measured]**.
+
+### The pointer
+
+The Mac does not draw its pointer into the framebuffer. It sends the shape as a cursor
+cache rectangle (`1104`, `0x450`) and the position as `1100` (`0x44c`), whose x and y
+are the position and which has no body.
+
+A cursor cache rectangle's x and y are the hotspot and its w and h the size, in points:
+the Mac sends the same shape whatever the density. The body is a `u32` cache id, a
+`u32` compressed length and that many bytes.
+
+- **A length of 0 selects** the shape stored under the id; the geometry is then zero.
+- **Otherwise it stores** a shape under the id: a zlib stream of its own, flushed but
+  never finished, holding w × h pixels of blue, green, red and padding, then a separate
+  plane of w × h alpha bytes. The padding byte is not the alpha.
+- The first shape of a NoMac session was a 28×40 arrow **[measured]**.
+
+While a tool such as Shift-Command-4 has taken over the screen, the Mac sends no new
+shape; the old one stays until the tool ends. Apple's viewer shows the same.
 
 ## Input
 

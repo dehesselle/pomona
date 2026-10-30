@@ -57,6 +57,37 @@ def test_replay_draws_the_recorded_picture_and_arms_on_the_layout():
     assert request == messages.framebuffer_update_request(False, 0, 0, 1440, 900)
 
 
+def test_full_quality_draws_zlib_and_keeps_the_cursor():
+    from reference import Framebuffer
+
+    recorded = (Path(__file__).parent / "fixtures" / "zlib.rfb").read_bytes()
+    replayed = stream.Parser().feed(recorded)
+    expected = Framebuffer(1440, 900)
+    for message in replayed:
+        if isinstance(message, stream.FramebufferUpdate):
+            for rect in message.rects:
+                expected.draw(rect)
+    total = sum(isinstance(m, stream.FramebufferUpdate) for m in replayed)
+    mac = fakemac.FakeMac(recorded)
+    seen = 0
+    done = threading.Event()
+
+    def count(update):
+        nonlocal seen
+        seen += 1
+        if seen == total:
+            done.set()
+
+    with connect_to(mac, quality="full", on_update=count) as session:
+        assert done.wait(30), f"{seen} of {total} updates"
+        assert session.error is None
+        assert session.picture.snapshot() == expected.pixels
+        assert (session.cursor.width, session.cursor.height) == (28, 40)
+        assert session.cursor_position is not None
+    mac.join()
+    assert mac.received[1] == messages.set_encodings(messages.FULL_ENCODINGS)
+
+
 def test_a_wrong_password_is_refused():
     mac = fakemac.FakeMac()
     with pytest.raises(AuthenticationError, match="Remote Management"):
@@ -97,7 +128,10 @@ def test_the_session_ends_when_the_mac_hangs_up():
     mac = fakemac.FakeMac(FIXTURE[:5000], hang_up=True)
     session = connect_to(mac)
     assert session.wait(10)
-    assert "closed the connection" in str(session.error)
+    # A clean end of stream, or a reset when our last messages went unread.
+    assert "closed the connection" in str(session.error) or isinstance(
+        session.error, ConnectionResetError
+    )
     session.close()
     mac.join()
 
