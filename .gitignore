@@ -17,7 +17,3 @@ wheels/
 target/
 *.pyd
 *.so
-
-# Research material (about 109 MB); what Pomona needs from it is taken into
-# docs/ and tests/fixtures/
-/research/

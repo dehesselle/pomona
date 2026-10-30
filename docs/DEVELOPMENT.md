@@ -28,9 +28,8 @@ uv tool install "ruff~=0.16.0"
 `python3-dev` is for `cargo test`: without maturin, PyO3 links the test binaries against
 libpython.
 
-Copy the working tree over with `tar` or `rsync`, leaving out `research/`, `POMONA.md`,
-`target/`, `.venv/`, `.devbox/` and `.git/`. Ruff would otherwise lint and format the
-research files too.
+Copy the working tree over with `tar` or `rsync`, leaving out `target/`, `.venv/`,
+`.devbox/` and `.git/`.
 
 ## Build
 

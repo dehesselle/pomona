@@ -71,6 +71,37 @@ user is logged in at the Mac and the viewer set `0x40`. Pomona never sets it.
 **No warm-up connection is needed.** iShareScreen opens a throwaway connection first;
 Pomona's live runs signed in without one **[measured]**.
 
+### Other sign-in types
+
+Pomona speaks only type 30, which TigerVNC 1.16.2 also uses against these Macs
+**[measured]**. What the others do, from zDesk's reading of the Mac's code, for when one
+is added:
+
+- **The list** always has 30 and 33. 36 (SRP) comes unless the Mac has network directory
+  nodes and a preference forbids it; 31 and 32 (asking the Mac's user) when "Anyone may
+  request permission to control screen" is on; 2 as above; 35 when the Mac can do
+  Kerberos. A Remote Management preference can cut the list to one type. The Mac
+  refuses a type it did not list.
+- **31 and 32** run type 30's exchange, but the Mac ignores the credentials and asks its
+  user to let the viewer observe (31) or control (32).
+- **36, SRP**: after the type, each message is a `u32` length and SRP fields (a `u8`,
+  big numbers with a `u16` length, opaque values with a `u8` length, strings with a
+  `u16` length, a `u64`). RFC 5054's 4096-bit group, SHA-512, PBKDF2 (the options string
+  says `mda=SHA-512,...,kdf=SALTED-SHA512-PBKDF2`). The viewer sends the user name, the
+  Mac its group, salt, B and iteration count, the viewer A and its proof, the Mac its
+  proof. An unknown account still gets an answer, with a random salt. The rekey is then
+  wrapped under the first 16 bytes of SHA-256 of the SRP session key. iShareScreen's
+  SRP sign-in succeeded against a NoMac Mac **[measured]**.
+- **33, RSA**: a `u32` length and an envelope (`u16` version, `RSA1`, `u16` kind). Kind 0
+  fetches the Mac's RSA key; kind 1 is a plain login, type 30's credential block under
+  AES-128-ECB with a key the viewer chose and sent RSA-encrypted, which then wraps the
+  rekey; kind 2 carries SRP inside the envelope.
+- **34** is for a connection the Mac was told to expect, with a shared 16-byte key;
+  **35** is Kerberos, not traced.
+- **Apple's viewer**, given a name and password, tries 33, then 36, then 30.
+
+zDesk's document, "Other login types", has the full field layouts.
+
 ## The cleartext prelude and the rekey
 
 Right after ServerInit the viewer sends, back to back and in cleartext:

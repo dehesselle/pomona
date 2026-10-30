@@ -112,8 +112,19 @@ stay apart from Pomona's own code and the project stays REUSE compliant:
 
 The sign-in and the record layer are written from zDesk's description rather than taken
 from iShareScreen, which has no type-30 sign-in and treats records as messages. Taking
-iShareScreen code, for SRP sign-in for example, would make the distribution AGPL in
-part.
+iShareScreen code would make the distribution AGPL in part. What it has that Pomona may
+want, at `9ab40d3a` (its package `isharescreen`):
+
+- `proxy/protocol/auth.py`: SRP sign-in (type 36, and 33's SRP form), proven against a
+  NoMac Mac;
+- `proxy/protocol/negotiation.py`: the session-select exchange;
+- `proxy/protocol/clipboard.py`, `proxy/local_clipboard.py`: the pasteboard archive;
+- `frontend/desktop/keyboard_grab.py`: grabbing the keyboard on Windows (a
+  `WH_KEYBOARD_LL` hook) and X11, and `keymap.py`.
+
+Its builder for `AutoFrameBufferUpdate` sends the value that turns pushes off, and its
+`parse_apple_display_layout` predates the corrected layout length; neither is worth
+taking.
 
 ## Core principles
 

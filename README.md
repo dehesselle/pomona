@@ -36,3 +36,4 @@ sign-in exactly as it refuses a wrong password.
   measured
 - [docs/high-performance.md](docs/high-performance.md): why High Performance mode does
   not work through ssh
+- [docs/roadmap.md](docs/roadmap.md): what is still to be built, in order
