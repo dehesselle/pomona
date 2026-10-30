@@ -31,21 +31,101 @@ class Recorder:
 def test_the_window_input_reaches_the_session():
     session = Recorder()
     on_event = Viewer(session).on_event
-    on_event("opened", "WARP", 1.5)
+    on_event("opened", "WARP", 1.5, 800, 600)
     on_event("key", 0xFFE7, True)
     on_event("pointer", 10, 20, 1)
     on_event("scroll", 0, 40, 10, 20)
     on_event("pasteboard", "copied")
-    on_event("scale", 2.0)
     on_event("something new", 1)
     assert session.calls == [
-        ("set_client_scale", 1.5),
         ("key", 0xFFE7, True),
         ("pointer", 10, 20, 1),
         ("scroll", 0, 40, 10, 20),
         ("set_pasteboard", "copied"),
-        ("set_client_scale", 2.0),
     ]
+
+
+class Shown:
+    """A picture whose window keeps what it is told to take."""
+
+    def __init__(self):
+        self.fits = []
+
+    def fit_window(self, *fit):
+        self.fits.append(fit)
+
+    def set_pasteboard(self, text):
+        pass
+
+
+class FourK:
+    """A session of a Retina Mac with a 4K screen, 1920x1080 in points."""
+
+    native_size = (3840, 2160)
+    density = 2.0
+    pasteboard = None
+
+    def __init__(self):
+        self.picture = Shown()
+        self.scales = []
+
+    def request_scale(self, factor):
+        self.scales.append(round(factor, 4))
+
+
+def shown(viewer, session):
+    """Open the window, and have the Mac's first layout arrive."""
+    viewer.on_event("opened", "GPU", 1.75, 1200, 800)
+    viewer._on_layout(session)
+
+
+def test_the_window_opens_at_the_client_s_density_and_the_mac_follows_it():
+    session = FourK()
+    viewer = Viewer(session, settle=0)
+    shown(viewer, session)
+    # 1.75 pixels per point here, 2 there: the Mac's text as large as ours.
+    assert session.picture.fits == [(3840, 2160, 3360, 1890)]
+    # The window resizes to that, or what the screen has room for, and the
+    # Mac is asked for what the window got.
+    viewer.on_event("size", 2400, 1350)
+    assert wait_for(lambda: session.scales[-1:] == [0.625])
+    viewer.on_event("size", 1920, 1080)
+    assert wait_for(lambda: session.scales[-1:] == [0.5])
+
+
+def test_a_size_or_a_scale_asked_for_decides_the_opening_size():
+    session = FourK()
+    shown(Viewer(session, size=(1600, 1200), settle=0), session)
+    session_too = FourK()
+    shown(Viewer(session_too, scale=0.25, settle=0), session_too)
+    assert session.picture.fits == [(3840, 2160, 1600, 900)]
+    assert session_too.picture.fits == [(3840, 2160, 960, 540)]
+
+
+def test_a_resize_is_asked_for_once_it_settles():
+    session = FourK()
+    viewer = Viewer(session, settle=0.2)
+    shown(viewer, session)
+    for width in range(1000, 2000, 100):
+        viewer.on_event("size", width, width * 9 // 16)
+    assert wait_for(lambda: session.scales)
+    threading.Event().wait(0.4)
+    # The last size only; its height, rounded down, is the tighter fit.
+    assert session.scales == [round(min(1900 / 3840, 1068 / 2160), 4)]
+
+
+def test_the_window_snaps_to_a_picture_the_mac_rounded():
+    from types import SimpleNamespace
+
+    session = FourK()
+    viewer = Viewer(session, settle=0)
+    shown(viewer, session)
+    viewer.on_event("size", 1244, 700)
+    viewer._on_layout(session, SimpleNamespace(width=1244, height=699))
+    assert session.picture.fits[-1] == (3840, 2160, 1244, 699)
+    # A picture further off is the Mac's to change, not the window's.
+    viewer._on_layout(session, SimpleNamespace(width=1200, height=675))
+    assert session.picture.fits[-1] == (3840, 2160, 1244, 699)
 
 
 def wait_for(condition, seconds=10):

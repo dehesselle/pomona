@@ -82,6 +82,8 @@ def _window(host: str, port: int, password: str, args: argparse.Namespace) -> in
         ctrl_as_command=args.ctrl_as_command,
         pasteboard=not args.no_pasteboard,
         reconnect=sign_in,
+        scale=args.scale,
+        size=args.size,
     )
     elapsed = time.monotonic() - start
     logging.getLogger(__name__).info(

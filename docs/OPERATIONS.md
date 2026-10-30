@@ -32,9 +32,17 @@ of an interval is that a moving window arrives in strips captured at different m
   which uploads every rectangle changed since the last frame and draws once, so it
   draws fewer frames than the Mac sends updates: a moving window comes as strips
   milliseconds apart, and one frame takes them all. Drawing never holds up reading.
-- **Scaling.** The picture is shown as large as the window allows, keeping its aspect,
-  at one to one when the window is the framebuffer's size; the window opens that size
-  when the screen has room, smaller when not.
+- **The Mac sends the window's size.** Pomona asks the Mac to scale its screen down to
+  the window's size before sending it, so the picture is drawn pixel for pixel and a
+  small window costs less traffic. Each resize asks again once the window has kept its
+  size for 0.3 s, and the Mac answers with a new layout and a whole screen. Where the
+  Mac rounds its picture a pixel or two off the window's size, the window snaps to the
+  picture. Live, a 1440×900 Mac on a 1024×768 screen was asked for 0.64 and sent
+  922×576; dragged smaller, 0.4311 and 621×388.
+- **The window keeps the Mac's shape.** On Windows its edges follow the shape while
+  you drag; elsewhere it is put back into shape after the drag. It grows no larger than
+  the Mac's screen, and has no maximize button: a screen of another shape would need
+  borders.
 - **Without a GPU**, wgpu draws with the system's software renderer (WARP on Windows).
   On a Windows VM at 1024×768 it showed a 1440×900 Mac scaled to fit, live
   ([measurements.md](measurements.md#pomona-live)).

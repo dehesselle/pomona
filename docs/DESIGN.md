@@ -40,6 +40,7 @@ crates/pomona-native/         Rust: pomona._native
   keys.rs      keys as the Mac reads them
   clipboard.rs the local pasteboard, text only (arboard)
   grab.rs      the keys Windows would keep, grabbed (Windows only)
+  frame.rs     the window held at the picture's shape while dragged (Windows only)
   gpu.rs       wgpu: the texture, uploads, drawing
 crates/apple-adaptive/        Rust: zDesk's Adaptive decoder, unchanged
 ```
@@ -115,9 +116,18 @@ How it runs:
 - The Mac's pointer shapes become the window's cursor.
 - `run_window`, not the session, closes the window when the session ends, so that a
   window can outlive its session. Closing the window ends the session.
-- When the window says its scale (pixels per point), the session asks a Retina Mac for
-  `min(1, client scale / Mac density)` with `SetServerScaling`, as Apple's viewer does,
-  so the Mac sends its screen at the client's density.
+- **The window decides the scale.** It tells Python its size in pixels, and `Viewer`
+  asks the Mac with `SetServerScaling` to send its screen at that size once a resize
+  has settled. The window snaps to a picture the Mac rounded a pixel or two off. The
+  Mac scales before encoding, so a small window costs little traffic, and the window
+  draws pixel for pixel. Only the window's first size follows Apple's rule, `min(1,
+  client scale / Mac density)`, so that the Mac's text appears as large as the
+  client's.
+- **The window keeps the picture's shape.** winit cannot hold an aspect, so on Windows
+  the window procedure is subclassed (`frame.rs`) to answer `WM_SIZING` with the
+  picture's shape while a drag goes on; elsewhere the window is put back into shape
+  after it. Its largest size is the Mac's screen at scale 1, and it has no maximize
+  button: a picture shows without borders only at its own shape.
 
 ### Input
 
@@ -241,3 +251,5 @@ taking.
     state belongs to one session's stream.
 16. **The pasteboard never sends back what it just received,** because the Mac reports
     the text it was given as a change of its own.
+17. **The window, not the Mac's density, decides the scale,** because a picture sent at
+    the window's size is drawn pixel for pixel and costs only what is shown.

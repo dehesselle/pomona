@@ -54,6 +54,9 @@ _USER_ENDED = 1
 _PASTEBOARD_CHANGED = 2
 _USER_SESSION_CHANGED = 17
 _KEYBOARD_SOURCE = struct.Struct(">HIH")
+# Scale factors: the smallest asked for, and the least change worth asking.
+_MIN_SCALE = 0.05
+_SCALE_STEP = 0.001
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +111,7 @@ class Session:
         self.keyboard_source: KeyboardSource | None = None
         self.on_update = on_update
         self.on_pasteboard = on_pasteboard
+        self.on_layout: Callable[[layout.Layout], None] | None = None
         self.bytes_received = 0
         # Why the session ended, if it did not end by `close`.
         self.error: BaseException | None = None
@@ -208,36 +212,54 @@ class Session:
         self.pasteboard = text
         self._send(message)
 
-    def set_client_scale(self, scale: float) -> None:
-        """Tell the session the client's pixels per point, so that a Retina
-        Mac sends its screen at the client's density rather than its own."""
-        self._client_scale = scale
-        self._rescale()
+    @property
+    def native_size(self) -> tuple[int, int]:
+        """The Mac's screen in pixels before the Mac scales it: the most it
+        can send."""
+        if self.layout is None:
+            return self.server.width, self.server.height
+        scale = self.layout.server_scale
+        return round(self.layout.width / scale), round(self.layout.height / scale)
 
-    def _rescale(self) -> None:
-        """Ask the Mac for `min(1, client density / Mac density)`, as Apple's
-        viewer does, once a layout has said what the Mac's density is."""
-        if (
-            self._client_scale is None
-            or self.layout is None
-            or not self.layout.displays
-        ):
-            return
+    @property
+    def density(self) -> float | None:
+        """The Mac's pixels per point on the screen shown, once a layout says."""
+        if self.layout is None or not self.layout.displays:
+            return None
         shown = [
             d
             for d in self.layout.displays
             if self.layout.current is None or d.id == self.layout.current
         ] or list(self.layout.displays)
         density = max(d.density for d in shown)
-        if density <= 0:
-            return
-        factor = min(1.0, self._client_scale / density)
-        if abs(factor - self.layout.server_scale) < 0.01:
+        return density if density > 0 else None
+
+    def request_scale(self, factor: float) -> None:
+        """Ask the Mac to send its screen scaled by `factor`, in (0, 1]: the
+        Mac shrinks it before encoding, and its own screen stays as it is."""
+        factor = min(1.0, max(factor, _MIN_SCALE))
+        current = self.layout.server_scale if self.layout else 1.0
+        if abs(factor - current) < _SCALE_STEP:
             self._scale_asked = None
-        elif self._scale_asked is None or abs(factor - self._scale_asked) >= 0.01:
-            log.info("asking the Mac to scale its screen by %g", factor)
+        elif (
+            self._scale_asked is None or abs(factor - self._scale_asked) >= _SCALE_STEP
+        ):
+            log.info("asking the Mac to scale its screen by %.4f", factor)
             self._scale_asked = factor
             self._send(messages.set_server_scaling(factor))
+
+    def set_client_scale(self, scale: float) -> None:
+        """Tell the session the client's pixels per point, so that a Retina
+        Mac sends its screen at the client's density rather than its own,
+        `min(1, client density / Mac density)` as Apple's viewer asks. A window
+        asks for its own size instead (`request_scale`)."""
+        self._client_scale = scale
+        self._rescale()
+
+    def _rescale(self) -> None:
+        density = self.density
+        if self._client_scale is not None and density is not None:
+            self.request_scale(self._client_scale / density)
 
     def _unscaled(self, x: int, y: int) -> tuple[int, int]:
         """The Mac reads positions in its unscaled framebuffer's pixels."""
@@ -402,7 +424,14 @@ class Session:
         if (new.width, new.height) != (self.picture.width, self.picture.height):
             self.picture.resize(new.width, new.height)
         self.layout = new
+        if (
+            self._scale_asked is not None
+            and abs(new.server_scale - self._scale_asked) < _SCALE_STEP
+        ):
+            self._scale_asked = None
         self._rescale()
+        if self.on_layout is not None:
+            self.on_layout(new)
 
     def _arm(self) -> None:
         width, height = self.picture.width, self.picture.height

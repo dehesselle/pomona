@@ -30,12 +30,17 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, E
 use winit::keyboard::Key;
 use winit::keyboard::PhysicalKey;
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-use winit::window::{CustomCursor, Window, WindowId};
+use winit::window::{CustomCursor, Window, WindowButtons, WindowId};
 
 use crate::clipboard::Pasteboard;
 use crate::gpu::{Frame, Gpu};
 use crate::keys::{KeyInput, Keyboard, Press};
 use crate::picture::Shared;
+
+/// The narrowest the window gets, in pixels.
+const MIN_WIDTH: u32 = 320;
+/// How much of the screen the window may take.
+const ROOM: f64 = 0.9;
 
 /// How far one notch of a mouse wheel scrolls, in points.
 const POINTS_PER_NOTCH: f64 = 40.0;
@@ -49,6 +54,8 @@ pub enum Wake {
     Cursor,
     /// The session is over.
     Quit,
+    /// The window is to take a new shape or size.
+    Fit,
     /// The Mac's pasteboard has new text.
     Pasteboard,
     /// Keys were grabbed from the system.
@@ -73,6 +80,10 @@ impl Waker {
 
     pub fn cursor(&self) {
         self.send(Wake::Cursor);
+    }
+
+    pub fn fit(&self) {
+        self.send(Wake::Fit);
     }
 
     pub fn pasteboard(&self) {
@@ -102,6 +113,14 @@ pub struct CursorImage {
     pub height: u16,
     pub hotspot: (u16, u16),
     pub rgba: Vec<u8>,
+}
+
+/// The window's shape and size, as Python asks for them.
+pub struct Fit {
+    /// The most the Mac can send, which also gives the aspect.
+    pub max: (u32, u32),
+    /// The size wanted, if the screen has room.
+    pub want: (u32, u32),
 }
 
 /// How a window behaves.
@@ -150,6 +169,8 @@ pub fn run(shared: Arc<Shared>, on_event: Py<PyAny>, options: Options) -> PyResu
         keyboard: Keyboard::new(options.ctrl_as_command),
         pasteboard: options.pasteboard.then(Pasteboard::default),
         pointer: Pointer::default(),
+        aspect: 0.0,
+        placed: false,
         #[cfg(target_os = "windows")]
         grab: None,
     };
@@ -194,6 +215,10 @@ struct App {
     /// None when the pasteboard is not shared.
     pasteboard: Option<Pasteboard>,
     pointer: Pointer,
+    /// The picture's width over its height, which the window keeps.
+    aspect: f64,
+    /// Whether the window was placed for its first fitted size.
+    placed: bool,
     #[cfg(target_os = "windows")]
     grab: Option<crate::grab::Hook>,
 }
@@ -219,13 +244,18 @@ impl App {
         };
         // The picture at one to one, unless the screen is too small for it.
         let mut size = PhysicalSize::new(width.max(320), height.max(200));
-        let mut attributes = Window::default_attributes().with_title(self.title.clone());
+        // No maximizing: a screen of another shape than the picture's would
+        // need borders.
+        let mut attributes = Window::default_attributes()
+            .with_title(self.title.clone())
+            .with_enabled_buttons(WindowButtons::CLOSE | WindowButtons::MINIMIZE);
         if let Some(monitor) = event_loop
             .primary_monitor()
             .or_else(|| event_loop.available_monitors().next())
         {
             let room = monitor.size();
-            let fit = (0.9 * room.width as f64 / size.width as f64).min(0.9 * room.height as f64 / size.height as f64);
+            let fit =
+                (ROOM * room.width as f64 / size.width as f64).min(ROOM * room.height as f64 / size.height as f64);
             if fit < 1.0 {
                 size = PhysicalSize::new((size.width as f64 * fit) as u32, (size.height as f64 * fit) as u32);
             }
@@ -242,6 +272,12 @@ impl App {
                 .create_window(attributes)
                 .map_err(|error| format!("no window: {error}"))?,
         );
+        self.aspect = f64::from(width.max(1)) / f64::from(height.max(1));
+        #[cfg(target_os = "windows")]
+        {
+            crate::frame::set_aspect(self.aspect);
+            crate::frame::keep_aspect(&window);
+        }
         let mut gpu = Gpu::new(window.clone())?;
         {
             let mut canvas = self.shared.canvas();
@@ -258,10 +294,59 @@ impl App {
             self.grab = crate::grab::install(&window, self.proxy.clone());
         }
         self.gpu = Some(gpu);
-        self.tell(event_loop, |py, f| f.call1(py, ("opened", adapter, scale)));
+        let inner = window.inner_size();
+        self.tell(event_loop, |py, f| {
+            f.call1(py, ("opened", adapter, scale, inner.width, inner.height))
+        });
         self.set_cursor(event_loop);
         window.request_redraw();
         Ok(())
+    }
+
+    /// Take the shape and size Python asked for: the picture's aspect, never
+    /// larger than the Mac can send, and the size wanted where the screen has
+    /// room for it.
+    fn fit(&mut self) {
+        let Some(fit) = self.shared.fit.lock().unwrap_or_else(|p| p.into_inner()).take() else {
+            return;
+        };
+        let Some(gpu) = &self.gpu else {
+            return;
+        };
+        let window = gpu.window.clone();
+        let (max_w, max_h) = fit.max;
+        self.aspect = f64::from(max_w) / f64::from(max_h);
+        #[cfg(target_os = "windows")]
+        crate::frame::set_aspect(self.aspect);
+        window.set_max_inner_size(Some(PhysicalSize::new(max_w, max_h)));
+        let min_w = MIN_WIDTH.min(max_w);
+        let min_h = ((f64::from(min_w) / self.aspect).round() as u32).max(1);
+        window.set_min_inner_size(Some(PhysicalSize::new(min_w, min_h)));
+
+        let mut width = f64::from(fit.want.0.min(max_w));
+        let monitor = window.current_monitor();
+        if let Some(monitor) = &monitor {
+            let room = monitor.size();
+            let height = width / self.aspect;
+            let shrink = (ROOM * f64::from(room.width) / width)
+                .min(ROOM * f64::from(room.height) / height)
+                .min(1.0);
+            width *= shrink;
+        }
+        let width = (width.round() as u32).max(min_w);
+        let size = PhysicalSize::new(width, ((f64::from(width) / self.aspect).round() as u32).max(1));
+        let _ = window.request_inner_size(size);
+        if !self.placed
+            && let Some(monitor) = monitor
+        {
+            // Centred for the size it opens at, a little high for the title bar.
+            self.placed = true;
+            let (room, origin) = (monitor.size(), monitor.position());
+            window.set_outer_position(PhysicalPosition::new(
+                origin.x + (room.width.saturating_sub(size.width) / 2) as i32,
+                origin.y + (room.height.saturating_sub(size.height) / 2) as i32 / 2,
+            ));
+        }
     }
 
     fn upload(&mut self) {
@@ -437,6 +522,7 @@ impl ApplicationHandler<Wake> for App {
             Wake::Quit => event_loop.exit(),
             // Taken once the events winit has are through.
             Wake::Keys => {}
+            Wake::Fit => self.fit(),
             Wake::Pasteboard => {
                 let text = self.shared.pasteboard.lock().unwrap_or_else(|p| p.into_inner()).take();
                 if let (Some(pasteboard), Some(text)) = (&mut self.pasteboard, text) {
@@ -455,10 +541,25 @@ impl ApplicationHandler<Wake> for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
-                if let Some(gpu) = &mut self.gpu {
-                    gpu.resize(size.width, size.height);
-                    gpu.window.request_redraw();
+                let Some(gpu) = &mut self.gpu else {
+                    return;
+                };
+                gpu.resize(size.width, size.height);
+                gpu.window.request_redraw();
+                // Minimized, the window has no size worth telling.
+                if size.width == 0 || size.height == 0 {
+                    return;
                 }
+                #[cfg(not(target_os = "windows"))]
+                if self.aspect > 0.0 {
+                    // Where the drag cannot be shaped as it happens, the
+                    // window is put back into shape after it.
+                    let height = ((f64::from(size.width) / self.aspect).round() as u32).max(1);
+                    if size.height.abs_diff(height) > 1 {
+                        let _ = gpu.window.request_inner_size(PhysicalSize::new(size.width, height));
+                    }
+                }
+                self.tell(event_loop, |py, f| f.call1(py, ("size", size.width, size.height)));
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.tell(event_loop, |py, f| f.call1(py, ("scale", scale_factor)))

@@ -18,7 +18,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::canvas::{Canvas, Error};
-use crate::window::{self, CursorImage, Waker};
+use crate::window::{self, CursorImage, Fit, Waker};
 
 create_exception!(
     _native,
@@ -34,6 +34,8 @@ pub struct Shared {
     pub cursor: Mutex<Option<CursorImage>>,
     /// Text from the Mac's pasteboard, for the window to put on the local one.
     pub pasteboard: Mutex<Option<String>>,
+    /// How the window is to be shaped and sized, once Python says.
+    pub fit: Mutex<Option<Fit>>,
     /// Frames the window has shown.
     pub frames: AtomicU64,
 }
@@ -63,6 +65,7 @@ impl Picture {
                 frames: AtomicU64::new(0),
                 cursor: Mutex::new(None),
                 pasteboard: Mutex::new(None),
+                fit: Mutex::new(None),
             }),
         }
     }
@@ -139,6 +142,18 @@ impl Picture {
         self.shared.waker.pasteboard();
     }
 
+    /// Shape the window showing this picture: never larger than `max_width` ×
+    /// `max_height`, the most the Mac can send, and always of its aspect; and
+    /// resize it to `width` × `height`, or the most of it the screen has room
+    /// for.
+    fn fit_window(&self, max_width: u32, max_height: u32, width: u32, height: u32) {
+        *self.shared.fit.lock().unwrap_or_else(|p| p.into_inner()) = Some(Fit {
+            max: (max_width.max(1), max_height.max(1)),
+            want: (width.max(1), height.max(1)),
+        });
+        self.shared.waker.fit();
+    }
+
     /// How many frames a window has shown of this picture.
     #[getter]
     fn frames(&self) -> u64 {
@@ -153,10 +168,11 @@ impl Picture {
 
 /// Show `picture` in a window until it is closed or `picture.quit()` is
 /// called. `on_event(kind, *args)` hears about the window, `("opened",
-/// adapter, scale)` and `("scale", scale)`, and its input: `("key", keysym,
-/// down)`, `("pointer", x, y, buttons)`, `("scroll", dx, dy, x, y)` and, when
-/// the window gets the focus with new text on the local pasteboard,
-/// `("pasteboard", text)`.
+/// adapter, scale, width, height)`, `("size", width, height)` in pixels after a
+/// resize, and `("scale", scale)`; and its input: `("key", keysym, down)`,
+/// `("pointer", x, y, buttons)`, `("scroll", dx, dy, x, y)` and, when the
+/// window gets the focus with new text on the local pasteboard, `("pasteboard",
+/// text)`. `fit_window` shapes and sizes the window.
 ///
 /// With `ctrl_as_command`, Control goes out as Command and the Windows key as
 /// Control. Without `pasteboard`, the window neither reads nor writes the local

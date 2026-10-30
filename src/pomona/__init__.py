@@ -102,8 +102,27 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="share no text between the local pasteboard and the Mac's",
     )
+    size = parser.add_mutually_exclusive_group()
+    size.add_argument(
+        "--scale",
+        type=float,
+        metavar="FACTOR",
+        help="open the window at FACTOR times the Mac's screen, at most 1",
+    )
+    size.add_argument(
+        "--size",
+        metavar="WxH",
+        help="open the window as large as fits in W by H pixels",
+    )
     parser.add_argument("-v", "--verbose", action="count", default=0)
     args = parser.parse_args(argv)
+    if args.scale is not None and not 0 < args.scale <= 1:
+        parser.error("--scale takes a factor above 0 and at most 1")
+    if args.size is not None:
+        width, _, height = args.size.lower().partition("x")
+        if not (width.isdigit() and height.isdigit() and int(width) and int(height)):
+            parser.error("--size takes WxH, such as 1920x1080")
+        args.size = (int(width), int(height))
 
     from pomona.cli import run
 

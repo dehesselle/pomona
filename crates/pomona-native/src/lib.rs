@@ -7,6 +7,8 @@
 
 pub mod canvas;
 mod clipboard;
+#[cfg(target_os = "windows")]
+mod frame;
 mod gpu;
 #[cfg(target_os = "windows")]
 mod grab;

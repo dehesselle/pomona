@@ -276,7 +276,9 @@ density 1 **[measured]**.
 - **`SetServerScaling`** (`08 00`, then an `f64` factor in (0, 1]) has the Mac scale the
   framebuffer before encoding. Apple's viewer asks for `min(1, client density / screen
   density)`, so a Retina Mac reaches a 1x client at its size in points. The next layout
-  reports the factor in each record.
+  reports the factor in each record. Any factor works, not only round ones: a 1440×900
+  Mac asked for 0.64 sent 922×576, and for 0.4311 621×388, rounding to the nearest
+  pixel (macOS 26.6).
 - **Pointer positions stay unscaled**: the Mac reads them in the pixels of the
   framebuffer before scaling, so a viewer divides by the factor in force.
 

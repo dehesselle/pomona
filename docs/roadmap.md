@@ -13,9 +13,10 @@ the Mac is involved.
   place, showing another NoMac Mac or itself.
 - The keys on a macOS client: Command and Option, and Command-Q reaching the Mac with
   winit's menu off. They compile for macOS but have not run there.
-- Check `SetServerScaling` live against a Retina Mac (NoMac's Macs are 1x), and the
-  pointer's shape on a HiDPI client, where it is drawn at its size in points and so
-  looks small.
+- The window's scale on a Retina Mac and a HiDPI client. A 4K Mac answered the
+  density rule (0.875 for a client at 175%); the window-driven scale was tried live only
+  on a 1x NoMac Mac. And the pointer's shape on a HiDPI client, where it is drawn at its
+  size in points and so looks small.
 - Measure what the window can draw, apart from the path: a paced replay of a capture.
 
 Question: how does Adaptive look while it moves and refines (text while scrolling)?

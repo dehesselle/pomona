@@ -26,7 +26,8 @@ with at least Observe and Control. See [OPERATIONS.md](OPERATIONS.md#troubleshoo
 
 ```text
 pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--quality adaptive|full]
-       [--push-interval US] [--ctrl-as-command] [--no-pasteboard] [-v]
+       [--push-interval US] [--ctrl-as-command] [--no-pasteboard]
+       [--scale FACTOR | --size WxH] [-v]
 ```
 
 | Option | |
@@ -38,6 +39,8 @@ pomona [--version] HOST[:PORT] -u USER [--probe SECONDS] [--quality adaptive|ful
 | `--push-interval US` | pace the Mac's updates, in microseconds; 0 (the default) is as fast as it captures |
 | `--ctrl-as-command` | send Control as Command and the Windows key as Control, so Ctrl-C copies on the Mac |
 | `--no-pasteboard` | share no text between your pasteboard and the Mac's |
+| `--scale FACTOR` | open the window at FACTOR (at most 1) times the Mac's screen in pixels |
+| `--size WxH` | open the window as large as fits in W × H pixels |
 | `-v`, `-vv` | log more, to stderr |
 | `--version` | print the version |
 
@@ -46,9 +49,21 @@ the terminal, without echo. Pomona never takes it from the command line, and doe
 read it from a pipe on stdin. It keeps it in memory while the window is open, to sign
 in again after a dropped connection.
 
-Without `--probe`, Pomona opens a window showing the Mac's screen, scaled to fit the
-window and keeping its aspect. Closing the window ends the session. With `-v` it logs,
-at the end, the updates received and the frames drawn.
+Without `--probe`, Pomona opens a window showing the Mac's screen. Closing the window
+ends the session. With `-v` it logs, at the end, the updates received and the frames
+drawn.
+
+The Mac sends its screen at the window's size, pixel for pixel: it scales the screen
+down before sending, and again after you resize the window. Its own screen stays as it
+is. The window:
+
+- opens at `--scale` times the Mac's screen, or as large as fits in `--size`, or by
+  default at the size that shows the Mac's text as large as your own; in any case at
+  most nine tenths of your screen;
+- keeps the Mac's shape while you resize it, so the picture fills it, and grows no
+  larger than the Mac's screen (it has no maximize button);
+- asks the Mac for its new size once you stop resizing, which costs one whole screen
+  of traffic.
 
 When the connection drops, the window stays and Pomona signs in again, after 1, 2, 5,
 10, 20 and then every 30 seconds, logging each attempt, until it is back, the Mac
@@ -132,6 +147,10 @@ All of Pomona's own errors derive from `PomonaError`. A session's `error` can al
 | `on_update` | called with each `stream.FramebufferUpdate` once it is drawn |
 | `on_pasteboard` | called with the text of the Mac's pasteboard each time it changes |
 | `set_pasteboard(text)` | put text on the Mac's pasteboard; empty text clears it |
+| `native_size` | the Mac's screen in pixels before it scales it: the most it can send |
+| `density` | the Mac's pixels per point, once a layout says |
+| `request_scale(factor)` | have the Mac scale its screen by `factor`, in (0, 1], before sending it |
+| `on_layout` | called with each display layout once it is applied |
 | `closed`, `wait(timeout)` | whether the session has ended; wait for it to end |
 | `error` | why it ended, if not by `close()` |
 | `close()` | end it, after sending the input already queued |
@@ -164,13 +183,14 @@ run_window(session, title="My Mac")  # returns when the window closes
 
 ```python
 run_window(session, *, title=None, ctrl_as_command=False, pasteboard=True,
-           reconnect=None) -> Session
+           reconnect=None, scale=None, size=None) -> Session
 ```
 
 Shows the session's screen in a window until the window is closed or the session ends,
-and then closes the session. Keys, clicks, scrolling and the pasteboard work as the
-command describes; `ctrl_as_command` is `--ctrl-as-command`, and `pasteboard=False` is
-`--no-pasteboard`.
+and then closes the session. The window's size, keys, clicks, scrolling and the
+pasteboard work as the command describes; `ctrl_as_command` is `--ctrl-as-command`,
+`pasteboard=False` is `--no-pasteboard`, `scale` is `--scale`, and `size` is `--size` as
+a `(width, height)` tuple.
 
 With `reconnect`, a session whose connection dropped is followed by another:
 `reconnect(picture)` signs in again and returns a session drawing on the window's
@@ -191,6 +211,8 @@ session = run_window(sign_in(), reconnect=sign_in)
 - A process can open one window in its life, a limit of winit's event loop.
 - It raises `RuntimeError` when no window or graphics adapter can be had. A machine
   without a GPU uses the system's software renderer.
-- `session.set_client_scale(scale)`, which the window calls with its pixels per point,
-  makes a Retina Mac send its screen at that density.
+- The window asks the Mac for its own size with `session.request_scale(factor)`.
+  Without a window, `request_scale` asks for any factor in (0, 1], and
+  `set_client_scale(scale)` for the one that sends a Retina Mac's screen at the
+  client's density, as Apple's viewer does.
 - `session.picture.frames` counts the frames the window has drawn.
