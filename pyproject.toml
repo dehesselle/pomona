@@ -47,7 +47,8 @@ testpaths = ["tests"]
 
 [tool.ruff]
 # Ruff comes from outside the project, and its defaults change between minor
-# releases; bump this once a new minor's findings have been reviewed.
+# releases; bump this once a new minor's findings have been reviewed, together
+# with the pins in .github/workflows/build.yml and docs/DEVELOPMENT.md.
 required-version = "~=0.16.0"
 
 [tool.ruff.lint.isort]
