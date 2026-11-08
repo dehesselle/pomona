@@ -22,9 +22,11 @@ From a checkout, with [uv](https://docs.astral.sh/uv/) and a Rust toolchain:
 
 ```sh
 uv sync
-ssh -N -L 127.0.0.1:5901:127.0.0.1:5900 me@mac &
-POMONA_PASSWORD=... uv run pomona 127.0.0.1:5901 -u me
+uv run pomona mac.example.com -u me
 ```
+
+Pomona asks for the account's password. To reach the Mac through ssh, see
+[the manual](docs/MANUAL.md#reaching-the-mac).
 
 The macOS account needs Remote Management permission; without it, the Mac refuses the
 sign-in exactly as it refuses a wrong password.
