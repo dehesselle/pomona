@@ -86,7 +86,7 @@ jobs:
       - name: Cache Rust build # zizmor: ignore[cache-poisoning]
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
-      # Lint runs on Linux only; each system compiles its own cfg code
+      # the Lint job above was Linux only, but each system compiles its own cfg code
       - name: Lint Rust
         run: cargo clippy --workspace --all-targets -- -D warnings
 
