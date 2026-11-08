@@ -16,14 +16,15 @@ notes on the protocol were invaluable and its Adaptive decoder is included verba
 
 ## Install and use
 
-Releases have wheels for Windows x86_64, macOS on Apple silicon and Linux x86_64, for
-Python 3.12 and later. From a checkout, with [uv](https://docs.astral.sh/uv/) and a
-Rust toolchain:
+Pomona is on [PyPI](https://pypi.org/project/pomona/), with wheels for Windows x86_64,
+macOS on Apple silicon and Linux x86_64, for Python 3.12 and later:
 
 ```sh
-uv sync
-uv run pomona mac.example.com -u me   # will prompt for password
+uv tool install pomona         # or: pip install pomona
+pomona mac.example.com -u me   # will prompt for password
 ```
+
+To build it from a checkout instead, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 To reach the Mac through ssh, see
 [the manual](docs/MANUAL.md#reaching-the-mac).

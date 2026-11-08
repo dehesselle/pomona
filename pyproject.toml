@@ -13,6 +13,34 @@ license-files = ["LICENSE", "LICENSES/*", "crates/apple-adaptive/LICENSE"]
 authors = [{ name = "René de Hesselle", email = "dehesselle@web.de" }]
 requires-python = ">=3.12"
 dependencies = ["cryptography>=46"]
+keywords = ["vnc", "rfb", "screen sharing", "remote desktop", "macos"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: MacOS X",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: X11 Applications",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: System Administrators",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Rust",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/dehesselle/pomona"
+Documentation = "https://github.com/dehesselle/pomona/tree/master/docs"
+Source = "https://github.com/dehesselle/pomona"
+Issues = "https://github.com/dehesselle/pomona/issues"
 
 [project.scripts]
 pomona = "pomona:main"
