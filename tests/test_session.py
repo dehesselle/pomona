@@ -138,6 +138,43 @@ def test_the_session_ends_when_the_mac_hangs_up():
     mac.join()
 
 
+def first_update():
+    """The fixture up to the end of its first update."""
+    parser, fed = stream.Parser(), 0
+    while True:
+        parsed = parser.feed(FIXTURE[fed : fed + 1000])
+        fed += 1000
+        if any(isinstance(m, stream.FramebufferUpdate) for m in parsed):
+            return FIXTURE[: fed - parser.pending]
+
+
+def test_a_session_has_not_ended_while_its_reader_still_draws():
+    # The writer finds the connection dead while the reader is still in the
+    # middle of what came before: a session following this one must not
+    # start on the picture yet.
+    mac = fakemac.FakeMac(first_update(), hang_up=True)
+    drawing, release = threading.Event(), threading.Event()
+
+    def hold(_update):
+        drawing.set()
+        release.wait(10)
+
+    session = connect_to(mac, on_update=hold)
+    assert drawing.wait(10)
+    for _ in range(200):
+        if session.closed:
+            break
+        session.key(0x61, True)
+        threading.Event().wait(0.05)
+    assert session.closed, "the writer never found the connection dead"
+    assert not session.wait(0.3)
+    release.set()
+    assert session.wait(10)
+    assert isinstance(session.error, OSError)
+    session.close()
+    mac.join()
+
+
 def test_closing_ends_the_session_without_an_error():
     mac = fakemac.FakeMac()
     session = connect_to(mac)

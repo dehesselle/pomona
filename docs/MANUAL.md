@@ -153,7 +153,7 @@ All of Pomona's own errors derive from `PomonaError`. A session's `error` can al
 | `density` | the Mac's pixels per point, once a layout says |
 | `request_scale(factor)` | have the Mac scale its screen by `factor`, in (0, 1], before sending it |
 | `on_layout` | called with each display layout once it is applied |
-| `closed`, `wait(timeout)` | whether the session has ended; wait for it to end |
+| `closed`, `wait(timeout)` | whether the session has ended; wait for it to end and its reader to stop, after which nothing draws on the picture or calls `on_update` |
 | `error` | why it ended, if not by `close()` |
 | `close()` | end it, after sending the input already queued |
 | `key(keysym, down)` | press or release the key of an X11 keysym, as the Mac reads it |

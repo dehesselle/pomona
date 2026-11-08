@@ -128,6 +128,9 @@ class Session:
         self._outbox: queue.SimpleQueue[bytes | None] = queue.SimpleQueue()
         self._closed = threading.Event()
         self._closing = threading.Lock()
+        # Set once the reader has stopped: nothing draws on the picture or
+        # calls on_update after it, nor changes `error`.
+        self._finished = threading.Event()
         self._fetches = itertools.count(1)
         self._user_ended = False
 
@@ -153,8 +156,11 @@ class Session:
         return self._closed.is_set()
 
     def wait(self, timeout: float | None = None) -> bool:
-        """Wait for the session to end; return whether it has."""
-        return self._closed.wait(timeout)
+        """Wait for the session to end, and its last update to be handled;
+        return whether it has. A session can be `closed` a moment before: the
+        writer finds a dead connection while the reader is still through what
+        came before."""
+        return self._finished.wait(timeout)
 
     def close(self) -> None:
         """End the session, after sending what was already queued."""
@@ -288,6 +294,7 @@ class Session:
             self.error = error
         finally:
             self._shut_down()
+            self._finished.set()
 
     def _ended(self, error: OSError | None) -> BaseException:
         """Why the Mac's end of the connection went away."""

@@ -196,7 +196,10 @@ on a thread of its own. When the connection dropped and the caller gave `reconne
 signs in again with growing pauses and points the window's events at the new session.
 Otherwise it closes the window. The new session draws on the window's picture after
 restarting its decoders: Adaptive's tables and tile cache and the deflate streams belong
-to one session's stream, and carried over they garbled the next one's picture.
+to one session's stream, and carried over they garbled the next one's picture. For the
+same reason a session counts as ended for `wait()` only once its reader has stopped: the
+writer can find the connection dead while the reader is still drawing what came before
+it, and a session following then would share the decoders with it.
 
 ## Build and version
 
