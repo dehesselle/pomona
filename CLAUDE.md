@@ -7,7 +7,6 @@ over Apple Screen Sharing's Standard mode (RFB 003.889, TCP only).
 - Read docs/protocol.md before touching anything that goes over the wire.
 - docs/MANUAL.md has the CLI and library API, docs/OPERATIONS.md runtime behavior,
   docs/measurements.md the numbers and the conditions they were measured under.
-- docs/roadmap.md is what comes next; take a step off it when it is done.
 
 @docs/DEVELOPMENT.md
 
