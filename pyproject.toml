@@ -38,6 +38,9 @@ cache-keys = [
     { file = "crates/**/Cargo.toml" },
     { file = "crates/**/*.rs" },
 ]
+# Without cargo, maturin installs Rust through puccinialin: it would silently download
+# more than 2 GiB in the background without the user's consent. Fail instead.
+build-constraint-dependencies = ["puccinialin<0"]
 
 [dependency-groups]
 dev = ["pytest>=9.1.1"]

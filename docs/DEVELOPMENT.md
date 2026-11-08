@@ -42,6 +42,12 @@ This builds the extension through maturin and installs everything into `.venv`. 
 Rust file changes, the next `uv sync` or `uv run` rebuilds it (`tool.uv.cache-keys` in
 `pyproject.toml`).
 
+Without cargo on the `PATH`, maturin would install a Rust toolchain on its own through
+puccinialin: it would silently download more than 2 GiB of data in the background,
+without the user's consent. `build-constraint-dependencies` in `pyproject.toml` allows
+no version of puccinialin, so a build without Rust fails at once instead, with uv
+reporting that puccinialin cannot be resolved. `uv.lock` records the constraint.
+
 The version lives in `Cargo.toml` (`workspace.package.version`) and is bumped by hand.
 maturin hands it to the Python package, and `pomona --version` reads it from the
 installed metadata.
