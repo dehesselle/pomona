@@ -199,7 +199,10 @@ restarting its decoders: Adaptive's tables and tile cache and the deflate stream
 to one session's stream, and carried over they garbled the next one's picture. For the
 same reason a session counts as ended for `wait()` only once its reader has stopped: the
 writer can find the connection dead while the reader is still drawing what came before
-it, and a session following then would share the decoders with it.
+it, and a session following then would share the decoders with it. The connection
+uses TCP keepalive, so that one dead without word ends too: nothing else would notice,
+since the reader waits for data and a still screen sends none. A client on macOS can
+miss even a reset while it sends nothing.
 
 ## Build and version
 

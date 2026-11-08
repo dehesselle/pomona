@@ -5,6 +5,7 @@
 """A whole session against the fake Mac: sign-in, record layer, replay."""
 
 import hashlib
+import socket
 import struct
 import threading
 from pathlib import Path
@@ -14,8 +15,10 @@ import pytest
 from test_adaptive_replay import CHECKPOINTS
 
 from pomona import messages, stream
+from pomona import session as session_module
 from pomona.errors import AuthenticationError, EndedAtMacError
 from pomona.session import LEFT, MIDDLE, RIGHT, KeyboardSource, connect
+from pomona.window import worth_reconnecting
 
 FIXTURE = (Path(__file__).parent / "fixtures" / "adaptive.rfb").read_bytes()
 UPDATES = sum(
@@ -130,6 +133,20 @@ def test_the_session_ends_when_the_mac_hangs_up():
     session = connect_to(mac)
     assert session.wait(10)
     assert "closed the connection" in str(session.error)
+    session.close()
+    mac.join()
+
+
+def test_the_session_ends_when_the_mac_vanishes(monkeypatch):
+    # The fake Mac resets the connection with the stream part way out and our
+    # arming unread. A client on macOS can miss that reset while it only
+    # reads; then only the keepalive probes find the connection dead.
+    monkeypatch.setattr(session_module, "KEEPALIVE", (1, 1, 1))
+    mac = fakemac.FakeMac(FIXTURE, abort=True)
+    session = connect_to(mac)
+    assert session._sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE)
+    assert session.wait(15), "the session never found the connection dead"
+    assert worth_reconnecting(session.error), repr(session.error)
     session.close()
     mac.join()
 

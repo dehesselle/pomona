@@ -57,6 +57,9 @@ _KEYBOARD_SOURCE = struct.Struct(">HIH")
 # Scale factors: the smallest asked for, and the least change worth asking.
 _MIN_SCALE = 0.05
 _SCALE_STEP = 0.001
+# TCP keepalive: seconds without traffic before the first probe, seconds
+# between probes, and the unanswered probes that end the connection.
+KEEPALIVE = (10, 5, 3)
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,6 +495,7 @@ def connect(
     sock = socket.create_connection((host, port), timeout=timeout)
     try:
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        _keep_alive(sock)
         wrap_key, server = connection.sign_in(sock, user, password)
         keys = connection.start_records(sock, wrap_key)
         sock.settimeout(None)
@@ -508,3 +512,29 @@ def connect(
     except BaseException:
         sock.close()
         raise
+
+
+def _keep_alive(sock: socket.socket) -> None:
+    """Have the kernel probe a quiet connection, so that one that died without
+    word ends the session: a Mac gone from the network, or a reset lost on the
+    way, which a client on macOS can miss for as long as it only reads. The
+    Mac's kernel answers the probes, not Screen Sharing, so a Mac busy writing
+    an update answers them too; and a still screen sends nothing for any
+    length of time."""
+    idle, interval, count = KEEPALIVE
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    # macOS names the idle time TCP_KEEPALIVE.
+    idle_option = getattr(socket, "TCP_KEEPIDLE", None)
+    options = (
+        (idle_option or getattr(socket, "TCP_KEEPALIVE", None), idle),
+        (getattr(socket, "TCP_KEEPINTVL", None), interval),
+        (getattr(socket, "TCP_KEEPCNT", None), count),
+    )
+    for option, value in options:
+        if option is None:
+            continue
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, option, value)
+        except OSError as error:
+            # An older Windows lacks some; its defaults probe after two hours.
+            log.debug("TCP option %d not set: %s", option, error)

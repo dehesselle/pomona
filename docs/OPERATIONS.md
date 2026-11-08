@@ -93,6 +93,12 @@ the Mac's user ended is not followed.
   or closes the connection, and the command reconnects.
 - **The connection fails**: `error` holds the `OSError`. With a window, the command
   reconnects.
+- **The connection dies without word**, the Mac gone from the network or a reset lost
+  on the way: TCP keepalive probes it after 10 s without traffic, every 5 s, and the
+  third unanswered probe, or the Mac's answer that the connection is gone, ends the
+  session with an `OSError` within about 25 s. A still screen sends nothing, so
+  without the probes a session that only reads would wait forever. The Mac's kernel
+  answers them, so a busy Mac does too.
 - **The stream cannot be read**: an unknown message, an unknown encoding, a record that
   fails its integrity check, or a second rekey end the session with a `ProtocolError`,
   because nothing after them can be trusted.
