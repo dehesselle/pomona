@@ -26,8 +26,10 @@ forward the Screen Sharing port for it.
 - SRP sign-in ([protocol.md](protocol.md#other-sign-in-types)).
 - Several displays: `SetDisplay`, and a choice of screen.
 - Option on a macOS client, live. Command, and Command-Q reaching the Mac, were tried.
-- Linux: the window on a real X11 and Wayland desktop, live, and input checked by a
-  tool (`input_check.py` is for Windows only). It draws under Xvfb so far.
+- Linux on a real desktop, by hand: so far the window ran on Xvfb with openbox (drawing
+  live, input, the pasteboard both ways, keeping its shape) and on headless sway
+  (drawing, keys, pointer moves). Untried: clicks and the wheel on Wayland, Shift on a
+  real layout there, the pasteboard on Wayland, and a GPU.
 - The High Performance relay, if Adaptive turns out not to be enough
   ([high-performance.md](high-performance.md)).
 - Dead keys, live. Umlauts and AltGr on a German layout were tried by hand; dead keys

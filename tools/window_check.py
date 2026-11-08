@@ -40,6 +40,9 @@ SCREENSHOT = (
 def screenshot(path: str) -> None:
     if sys.platform == "win32":
         command = ["powershell", "-NoProfile", "-Command", SCREENSHOT.format(path=path)]
+    elif os.environ.get("WAYLAND_DISPLAY"):
+        # winit takes Wayland where there is one; grim needs wlroots' screencopy.
+        command = ["grim", path]
     else:
         # ImageMagick, from the X server in $DISPLAY.
         command = ["import", "-window", "root", path]

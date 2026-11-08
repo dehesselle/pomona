@@ -4,14 +4,16 @@
 
 """Type and click into Pomona's window, and check what reached the Mac.
 
-Run on a Windows devbox inside a desktop session (see docs/DEVELOPMENT.md,
-"Trying the window"). It opens the window on the fake Mac, brings it to the
-front, and sends keys and mouse events through SendInput, as a keyboard and
-mouse would: Shift-H, i, Shift-1, the Windows key, Alt-Tab, an ä as a Unicode
-key, X held through two repeats, a left and a right click in the middle of
-the picture and one notch of the wheel down. Then it compares what the fake
-Mac received with what it should have, and checks that Windows kept none of
-the keys: the window must still be in front.
+Run on a Windows devbox inside a desktop session, or on a Linux devbox on an
+X server with a window manager (see docs/DEVELOPMENT.md, "Trying the
+window"). It opens the window on the fake Mac, brings it to the front, and
+sends keys and mouse events as a keyboard and mouse would, through SendInput
+on Windows and xdotool on X11: Shift-H, i, Shift-1, the Windows key, Alt-Tab
+(Windows only: on Linux the desktop keeps it), an ä, X held through two
+repeats, a left and a right click in the middle of the picture and one notch
+of the wheel down. Then it compares what the fake Mac received with what it
+should have, and checks that the system kept none of the keys: the window
+must still be in front.
 
     python tools/input_check.py
 """
@@ -29,7 +31,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TITLE = "Pomona input check"
 
-user32 = ctypes.WinDLL("user32", use_last_error=True)
+WINDOWS = sys.platform == "win32"
+if WINDOWS:
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
 
 VK_SHIFT, VK_MENU, VK_TAB, VK_LWIN = 0x10, 0x12, 0x09, 0x5B
 EXTENDED = {VK_LWIN}
@@ -115,13 +119,28 @@ def click(button: tuple[int, int]) -> None:
     send(mouse(button[1]))
 
 
+def xdotool(*args: str) -> str:
+    done = subprocess.run(
+        ["xdotool", *args], capture_output=True, text=True, check=False
+    )
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def find_window() -> int:
+    """The window's handle, or 0 while there is none."""
+    if WINDOWS:
+        return user32.FindWindowW(None, TITLE)
+    found = xdotool("search", "--name", TITLE).split()
+    return int(found[0]) if found else 0
+
+
 def start(session, report: dict) -> None:
     """Wait for the window, then drive it from a process of its own, as input
     comes from outside the window."""
     # The window is there before it can draw; it takes the keys once it has
     # drawn its first frame.
     deadline = time.monotonic() + 15
-    while not (hwnd := user32.FindWindowW(None, TITLE)) or not session.picture.frames:
+    while not (hwnd := find_window()) or not session.picture.frames:
         if time.monotonic() > deadline:
             report["error"] = "the window never opened"
             session.close()
@@ -174,6 +193,49 @@ def drive(hwnd: int) -> dict:
     return report
 
 
+def drive_x11(window: int) -> dict:
+    """The same through xdotool, which types through the X server's test
+    extension as a keyboard would, into whichever window has the focus."""
+    # xwininfo, as xdotool's own geometry is off by the window manager's frame.
+    info = subprocess.run(
+        ["xwininfo", "-id", str(window)], capture_output=True, text=True, check=True
+    ).stdout
+    field = {
+        key.strip(): value.strip()
+        for key, _, value in (line.partition(":") for line in info.splitlines())
+    }
+    x, y = int(field["Absolute upper-left X"]), int(field["Absolute upper-left Y"])
+    width, height = int(field["Width"]), int(field["Height"])
+    # The title bar, which the window manager draws above the window.
+    xdotool("mousemove", str(x + width // 2), str(max(y - 10, 0)), "click", "1")
+    time.sleep(0.5)
+    report = {"in front before": xdotool("getactivewindow") == str(window)}
+
+    # Key by key: `key shift+h` would let go of Shift before H.
+    for step in (
+        ("keydown", "shift", "keydown", "h", "keyup", "h", "keyup", "shift"),
+        ("key", "i"),
+        ("keydown", "shift", "keydown", "1", "keyup", "1", "keyup", "shift"),
+        ("key", "Super_L"),
+    ):
+        xdotool(*step)
+        time.sleep(0.05)
+    # xdotool lends ä a spare key for the moment, as an input method would.
+    xdotool("type", "--delay", "50", "ä")
+    # Held past the X server's repeat delay, so it repeats at its rate.
+    xdotool("keydown", "x", "sleep", "1", "keyup", "x")
+
+    xdotool("mousemove", str(x + width // 2), str(y + height // 2))
+    time.sleep(0.05)
+    # Buttons 1 and 3 are left and right; 5 is a notch of the wheel down.
+    for button in ("1", "3", "5"):
+        xdotool("click", button)
+        time.sleep(0.05)
+    time.sleep(0.5)
+    report["in front after"] = xdotool("getactivewindow") == str(window)
+    return report
+
+
 def decode(received: list[bytes]) -> list[tuple]:
     """The input among what the Mac received."""
     events = []
@@ -203,6 +265,27 @@ def tidy(events: list[tuple]) -> list[tuple]:
     return tidied
 
 
+def three_repeats(events: list[tuple]) -> list[tuple]:
+    """At most three presses of a held key, as on Windows: on X11 the server
+    repeats it at its own rate for as long as it is held."""
+    kept: list[tuple] = []
+    i = 0
+    while i < len(events):
+        event = events[i]
+        pair = [event, ("key", event[1], False)]
+        if event[0] != "key" or not event[2] or events[i : i + 2] != pair:
+            kept.append(event)
+            i += 1
+            continue
+        count = 0
+        while events[i : i + 2] == pair:
+            if count < 3:
+                kept.extend(pair)
+            count += 1
+            i += 2
+    return kept
+
+
 def same(got: tuple, want: tuple) -> bool:
     """Equal, but for two pixels of position: the middle of the window, in
     SendInput's absolute coordinates, lands a pixel or two off."""
@@ -215,7 +298,7 @@ def same(got: tuple, want: tuple) -> bool:
 
 def main() -> int:
     if sys.argv[1:2] == ["--drive"]:
-        print(json.dumps(drive(int(sys.argv[2]))))
+        print(json.dumps((drive if WINDOWS else drive_x11)(int(sys.argv[2]))))
         return 0
     sys.path.insert(0, str(ROOT / "tests"))
     import fakemac
@@ -244,10 +327,16 @@ def main() -> int:
         ("key", shift, False),
         ("key", "0xffeb", True),
         ("key", "0xffeb", False),
-        ("key", meta, True),
-        ("key", "0xff09", True),
-        ("key", "0xff09", False),
-        ("key", meta, False),
+        *(
+            [
+                ("key", meta, True),
+                ("key", "0xff09", True),
+                ("key", "0xff09", False),
+                ("key", meta, False),
+            ]
+            if WINDOWS
+            else []
+        ),
         ("key", "0x10000e4", True),
         ("key", "0x10000e4", False),
         # Each repeat goes up and down again.
@@ -263,8 +352,14 @@ def main() -> int:
         ("pointer", 2, x, y),
         ("pointer", 0, x, y),
         ("scroll", 0, 40, x, y),
+        # xdotool's notch is a press of button 5, for which the X server adds
+        # an emulated scroll motion. winit 0.30 counts both; a mouse's notch
+        # comes as the motion, and winit skips the emulated button.
+        *([] if WINDOWS else [("scroll", 0, 40, x, y)]),
     ]
     got = tidy(decode(mac.received))
+    if not WINDOWS:
+        got = three_repeats(got)
     for event in got:
         print(*event)
     print(report)

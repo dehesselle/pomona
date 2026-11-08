@@ -227,8 +227,42 @@ xvfb-run -a -s "-screen 0 1440x900x24" \
 
 The log names the adapter: `llvmpipe (...) (Vulkan, Cpu)` is lavapipe. With
 `VK_ICD_FILENAMES=/nonexistent`, Vulkan finds no driver and OpenGL draws instead,
-`(Gl, Cpu)`. The screenshot comes from ImageMagick's `import`. Xvfb runs no window
-manager, so the window has no frame. `input_check.py` is for Windows only.
+`(Gl, Cpu)`. The screenshot comes from ImageMagick's `import`. `xvfb-run` starts no
+window manager, so the window has no frame.
+
+**Input on X11** needs a window manager, for the focus and the title bar.
+`input_check.py` drives the window with xdotool on an Xvfb of its own, with openbox:
+
+```sh
+apt-get install -y openbox xdotool x11-utils
+Xvfb :5 -screen 0 1920x1200x24 &
+DISPLAY=:5 openbox &
+DISPLAY=:5 uv run python tools/input_check.py
+```
+
+- Alt-Tab is left out: on Linux the desktop keeps it.
+- X is held for a second and the X server repeats it at its own rate, so the check
+  keeps the first three presses.
+- One notch from xdotool reaches the Mac twice: xdotool presses button 5, the X server
+  adds an emulated scroll motion, and winit 0.30 counts both. A mouse's notch comes as
+  the motion, and winit skips its emulated button. The check expects the two.
+
+**Wayland** runs headless in sway; grim takes the screenshot:
+
+```sh
+apt-get install -y sway grim
+export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -m 700 $XDG_RUNTIME_DIR
+printf 'output HEADLESS-1 resolution 1440x900\nxwayland disable\n' > sway.conf
+WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman sway -c sway.conf &
+WAYLAND_DISPLAY=wayland-1 uv run python tools/window_check.py --fixture zlib.rfb --seconds 6 --shot shot.png
+```
+
+sway tiles, so the window fills the output. Keys can be sent with `wtype` while
+another `wtype -s 20000` holds a virtual keyboard: each call makes a keyboard of its
+own, and without one held, its keys come before winit has bound it. wtype's keymap
+has one level per key, so Shift does not change a letter. `wlrctl` moves the pointer,
+but its clicks come before winit has bound the pointer it makes for them, and nothing
+holds one. Clicks and the wheel on Wayland are therefore untried.
 
 ## Code from other projects
 

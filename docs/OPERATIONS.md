@@ -55,7 +55,9 @@ of an interval is that a moving window arrives in strips captured at different m
   because the Mac repeats nothing itself.
 - **Losing the focus releases** every key and button held, for the Mac too: a key held
   while switching away would otherwise stay down on the Mac.
-- **A wheel notch** scrolls 40 points, three lines in TextEdit.
+- **A wheel notch** scrolls 40 points, three lines in TextEdit. On X11, a notch sent as
+  a button press through the XTEST extension, as xdotool sends it, scrolls twice:
+  winit counts the button and the scroll the X server emulates from it.
 
 ## The pasteboard
 
