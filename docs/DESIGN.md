@@ -182,10 +182,12 @@ local pasteboard.
   `set_pasteboard` sends text the other way. The archive is inflated only as far as the
   text, because a copied image comes with it.
 - **In the window** (`clipboard.rs`, through `arboard`): the Mac's text goes onto the
-  local pasteboard on the window's thread, woken like the picture. The local text is
-  read when the window gets the focus, not watched, which needs no platform hooks and is
-  when it matters to the Mac. The text last exchanged either way is remembered, because
-  the Mac reports text it was given as its own change and would otherwise echo it.
+  local pasteboard on the window's thread, woken like the picture. Text that came
+  before there was a loop to wake goes there as the window opens, before the focus can
+  send the local text the other way. The local text is read when the window gets the
+  focus, not watched, which needs no platform hooks and is when it matters to the Mac.
+  The text last exchanged either way is remembered, because the Mac reports text it was
+  given as its own change and would otherwise echo it.
 
 ### Following a dropped session
 

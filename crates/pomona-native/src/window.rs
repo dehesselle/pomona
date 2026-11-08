@@ -320,8 +320,19 @@ impl App {
             f.call1(py, ("opened", adapter, scale, inner.width, inner.height))
         });
         self.set_cursor(event_loop);
+        // Text the Mac copied before there was a loop to wake, before the
+        // focus can send the local text the other way.
+        self.mac_copied();
         window.request_redraw();
         Ok(())
+    }
+
+    /// Put the text the Mac copied last on the local pasteboard, if any came.
+    fn mac_copied(&mut self) {
+        let text = self.shared.pasteboard.lock().unwrap_or_else(|p| p.into_inner()).take();
+        if let (Some(pasteboard), Some(text)) = (&mut self.pasteboard, text) {
+            pasteboard.mac_copied(text);
+        }
     }
 
     /// Take the shape and size Python asked for: the picture's aspect, never
@@ -544,12 +555,7 @@ impl ApplicationHandler<Wake> for App {
             // Taken once the events winit has are through.
             Wake::Keys => {}
             Wake::Fit => self.fit(),
-            Wake::Pasteboard => {
-                let text = self.shared.pasteboard.lock().unwrap_or_else(|p| p.into_inner()).take();
-                if let (Some(pasteboard), Some(text)) = (&mut self.pasteboard, text) {
-                    pasteboard.mac_copied(text);
-                }
-            }
+            Wake::Pasteboard => self.mac_copied(),
         }
     }
 
