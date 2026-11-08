@@ -18,7 +18,9 @@ tried on Windows.
 
 ## Install and use
 
-From a checkout, with [uv](https://docs.astral.sh/uv/) and a Rust toolchain:
+Releases have wheels for Windows x86_64, macOS on Apple silicon and Linux x86_64, for
+Python 3.12 and later. From a checkout, with [uv](https://docs.astral.sh/uv/) and a
+Rust toolchain:
 
 ```sh
 uv sync

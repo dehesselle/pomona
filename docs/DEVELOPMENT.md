@@ -103,15 +103,24 @@ rustfmt runs on our crate only, because `apple-adaptive` keeps upstream's format
 `.github/workflows/build.yml` runs on GitHub for every push and pull request:
 
 - **Lint**, on Linux: everything under [Lint](#lint), with clippy's warnings as errors.
-- **Test**, on Windows: clippy again, because Linux never compiles the `cfg(windows)`
-  code, then `cargo test --workspace` and `uv run --locked pytest`.
-- **Build**, on Windows: the wheel, and an import of it. The extension is built for
-  abi3, so the one wheel serves Python 3.12 and later. No other platform is built yet,
-  and there is no sdist.
+- **Test**, on Windows, macOS and Linux: clippy again, because each system compiles
+  only its own `cfg` code, then `cargo test --workspace` and `uv run --locked pytest`.
+- **Build**: a wheel for each of Windows x86_64, macOS arm64 and Linux x86_64, and an
+  import of it under Python 3.12. The extension is built for abi3, so each wheel serves
+  Python 3.12 and later. There is no sdist.
+  - macOS: `MACOSX_DEPLOYMENT_TARGET` is 11.0, the oldest macOS the wheel runs on,
+    whatever the runner's own.
+  - Linux: built in PyPA's `manylinux_2_28_x86_64` image, because PyPI takes no wheel
+    tagged plain `linux`, and one built on the runner would need its newer glibc.
+    `MATURIN_PEP517_ARGS` asks maturin for `manylinux_2_28`; maturin then refuses a
+    wheel that links anything outside that policy. It is set in the workflow only:
+    in `pyproject.toml` it would fail `uv sync` on a newer system. The image is pinned
+    by digest and bumped by hand.
+  - Each uploads its own artifact, `dist-<name>`.
 
-A `v*` tag must name the version in `Cargo.toml`; the build checks it against the
-wheel's. A tag then makes a draft GitHub release with the wheel and publishes it to
-PyPI, through a trusted publisher and the `pypi` environment.
+A `v*` tag must name the version in `Cargo.toml`; each build checks it against its
+wheel's. A tag then makes a draft GitHub release with the three wheels and publishes
+them to PyPI, through a trusted publisher and the `pypi` environment.
 
 The ruff pin appears in three places: `pyproject.toml`, the setup above, and the
 workflow. They change together.
