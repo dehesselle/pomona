@@ -4,9 +4,10 @@
 
 """Open Pomona's window for a while and report what it drew.
 
-Run on a Windows devbox inside a desktop session (see docs/DEVELOPMENT.md,
-"Trying the window"), against the fake Mac replaying a fixture, or against a
-real Mac's forwarded port with POMONA_PASSWORD set:
+Run on a Windows devbox inside a desktop session, or on a Linux devbox under
+Xvfb (see docs/DEVELOPMENT.md, "Trying the window"), against the fake Mac
+replaying a fixture, or against a real Mac's forwarded port with
+POMONA_PASSWORD set:
 
     python tools/window_check.py --fixture zlib.rfb --seconds 10 --shot shot.png
     python tools/window_check.py --port 15900 --user agent --seconds 20 --shot shot.png
@@ -37,10 +38,12 @@ SCREENSHOT = (
 
 
 def screenshot(path: str) -> None:
-    subprocess.run(
-        ["powershell", "-NoProfile", "-Command", SCREENSHOT.format(path=path)],
-        check=False,
-    )
+    if sys.platform == "win32":
+        command = ["powershell", "-NoProfile", "-Command", SCREENSHOT.format(path=path)]
+    else:
+        # ImageMagick, from the X server in $DISPLAY.
+        command = ["import", "-window", "root", path]
+    subprocess.run(command, check=False)
 
 
 def main() -> int:

@@ -138,8 +138,14 @@ pub fn run(shared: Arc<Shared>, on_event: Py<PyAny>, options: Options) -> PyResu
     #[cfg(target_os = "windows")]
     {
         // A library cannot promise to be called on the main thread; Windows
-        // does not need it. macOS does, and enforces it.
+        // and Linux do not need it. macOS does, and enforces it.
         use winit::platform::windows::EventLoopBuilderExtWindows;
+        builder.with_any_thread(true);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // X11 and Wayland share the setting.
+        use winit::platform::x11::EventLoopBuilderExtX11;
         builder.with_any_thread(true);
     }
     #[cfg(target_os = "macos")]

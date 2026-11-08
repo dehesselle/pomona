@@ -82,6 +82,16 @@ readable. A frame takes in every update that arrived before it, so frames are fe
 updates. The update rate is again the path's; nothing here measures what the window
 could draw.
 
+On Linux, measured on 2026-11-08 on a Hetzner VM (Ubuntu 26.04, 2 vCPU, no GPU) under
+Xvfb at 1440×900, with Adaptive quality, the same scrolling Terminal and 20 s each, over
+the same kind of path to the VM in Falkenstein. The window opened at 0.9 and the Mac sent
+1296×810.
+
+| Drawn by | Updates/s | Frames drawn/s | Bandwidth |
+| --- | --- | --- | --- |
+| lavapipe (Vulkan) | 9.5 | 5.9 | 0.53 Mbit/s |
+| llvmpipe (OpenGL) | 10.0 | 6.8 | 0.65 Mbit/s |
+
 ## Latency
 
 Measured on 2026-10-30 from a Windows PC in Germany to a NoMac Mac, whose connection

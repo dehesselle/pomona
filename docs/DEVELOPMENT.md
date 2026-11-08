@@ -118,8 +118,9 @@ workflow. They change together.
 
 ## Trying the window
 
-The window is tried on a Windows devbox at Clouding. It has no GPU; wgpu draws with
-D3D12's software renderer.
+The window is tried on a Windows devbox at Clouding, and on Linux under Xvfb on the
+Hetzner box (see [On Linux](#on-linux)). Neither has a GPU; wgpu draws with the system's
+software renderer.
 
 **Setting the box up.** Rust's MSVC target needs Microsoft's C++ build tools, and the
 image has no package manager, so everything comes from its own installer:
@@ -201,6 +202,24 @@ uv run python tools/input_check.py
 `ssh -F .devbox/ssh_config -N -R 127.0.0.1:15900:127.0.0.1:15900 clouding-windows`. A
 scheduled task does not inherit the ssh session's environment, so hand it the password in
 a file it reads once and deletes.
+
+### On Linux
+
+The Linux box needs no desktop: Xvfb is an X server without a screen, and Mesa's
+software drivers draw on it. On top of the setup under
+[Where to build and test](#where-to-build-and-test):
+
+```sh
+apt-get install -y xvfb xauth libxkbcommon-x11-0 libvulkan1 mesa-vulkan-drivers \
+  libegl1 libgl1-mesa-dri imagemagick
+xvfb-run -a -s "-screen 0 1440x900x24" \
+  uv run python tools/window_check.py --fixture zlib.rfb --quality full --seconds 6 --shot shot.png
+```
+
+The log names the adapter: `llvmpipe (...) (Vulkan, Cpu)` is lavapipe. With
+`VK_ICD_FILENAMES=/nonexistent`, Vulkan finds no driver and OpenGL draws instead,
+`(Gl, Cpu)`. The screenshot comes from ImageMagick's `import`. Xvfb runs no window
+manager, so the window has no frame. `input_check.py` is for Windows only.
 
 ## Code from other projects
 

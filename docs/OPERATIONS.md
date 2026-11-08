@@ -43,8 +43,9 @@ of an interval is that a moving window arrives in strips captured at different m
   you drag; elsewhere it is put back into shape after the drag. It grows no larger than
   the Mac's screen, and has no maximize button: a screen of another shape would need
   borders.
-- **Without a GPU**, wgpu draws with the system's software renderer (WARP on Windows).
-  On a Windows VM at 1024×768 it showed a 1440×900 Mac scaled to fit, live
+- **Without a GPU**, wgpu draws with the system's software renderer (WARP on Windows,
+  Mesa's lavapipe for Vulkan or llvmpipe for OpenGL on Linux). On a Windows VM at
+  1024×768 it showed a 1440×900 Mac scaled to fit, live
   ([measurements.md](measurements.md#pomona-live)).
 - **Input goes out as it happens.** Keys and clicks go out at once; pointer moves go out
   once for each pass of the window's loop, the last position only. Clicks land where the
@@ -133,6 +134,11 @@ the Mac paces itself by how fast its socket drains ([measurements.md](measuremen
 the window works, but Windows keeps its keys.
 
 **"no graphics adapter can draw to the window", or "the window cannot be drawn to".**
-Pomona found no D3D12 (Windows) or Metal (macOS) device for the window. On Windows, a
-process without a desktop cannot draw: an ssh session runs in session 0, which has none.
-Run Pomona in a desktop session.
+Pomona found no D3D12 (Windows), Metal (macOS) or Vulkan or OpenGL (Linux) device for
+the window. On Windows, a process without a desktop cannot draw: an ssh session runs in
+session 0, which has none. Run Pomona in a desktop session.
+
+On Linux, the window needs an X11 or Wayland session and, loaded when it opens,
+libxkbcommon (with libxkbcommon-x11 on X11) and either a Vulkan loader with a driver or
+libEGL with Mesa. Without a GPU, Mesa's software drivers draw: on Debian and Ubuntu,
+`libvulkan1 mesa-vulkan-drivers` or `libegl1 libgl1-mesa-dri`.

@@ -82,7 +82,8 @@ Keys, clicks and the mouse wheel in the window go to the Mac:
   With `--ctrl-as-command`, Control is Command and the Windows key Control instead.
 - On Windows the window keeps the Windows keys, Alt-Tab, Alt-Esc, Alt-Space and
   Ctrl-Esc while it is in front, so they reach the Mac: Windows-Tab is Command-Tab.
-  Ctrl-Alt-Del stays with Windows.
+  Ctrl-Alt-Del stays with Windows. On Linux the desktop keeps the shortcuts it takes,
+  such as Super's and Alt-Tab.
 - Caps Lock, Num Lock, Insert, Pause, Scroll Lock, Print and the menu key are not sent;
   the Mac has nothing for them.
 

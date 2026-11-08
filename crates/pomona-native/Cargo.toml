@@ -27,6 +27,11 @@ pyo3 = { version = "0.30.1", features = ["abi3-py312"] }
 wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "wgsl"] }
 winit = "0.30"
 
+# Linux draws with Vulkan, or OpenGL where there is none; both are loaded at
+# run time, so the extension links neither.
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu = { version = "30", default-features = false, features = ["vulkan", "gles"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",

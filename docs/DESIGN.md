@@ -15,7 +15,7 @@ for its desktop command.
   ([high-performance.md](high-performance.md)).
 - **Adaptive quality.** It carried 45 updates a second in a tenth of the bandwidth of
   zlib or ZRLE ([measurements.md](measurements.md)).
-- **A native window, no browser,** on Windows and macOS first. Linux may follow.
+- **A native window, no browser,** on Windows, macOS and Linux.
 
 ## Parts
 
@@ -89,7 +89,8 @@ with the GIL released while another thread reads the picture.
 ## The window
 
 The window lives in the Rust extension: **winit** for the window and its events,
-**wgpu** (D3D12 and Metal only) to show the canvas as a texture. The reasons:
+**wgpu** to show the canvas as a texture: D3D12 on Windows, Metal on macOS, Vulkan or
+else OpenGL on Linux, each build with its own backends only. The reasons:
 
 - Decoded pixels never pass through Python: the window uploads the canvas's changed
   rectangles straight into the texture.
@@ -101,8 +102,9 @@ How it runs:
 
 - `run_window` runs winit's event loop on the calling thread with the GIL released,
   and takes the GIL only to tell Python about the window (`on_event`). macOS requires
-  the main thread; Windows does not, so the loop is allowed on any thread there. winit
-  allows one event loop per process, so a process opens one window in its life.
+  the main thread; Windows and Linux do not, so the loop is allowed on any thread
+  there. winit allows one event loop per process, so a process opens one window in its
+  life.
 - The canvas records which rectangles changed. Decoding wakes the loop through the
   picture's waker; wake-ups coalesce, one outstanding at a time, and the loop uploads
   everything that changed since the last upload. A burst of strips from the Mac
@@ -110,8 +112,12 @@ How it runs:
 - The picture is drawn by one triangle sampling the texture, as large as fits, centred
   and on whole pixels, over a dark grey letterbox. Linear filtering is exact at one to
   one and smooth when scaled.
-- With no GPU, wgpu takes the system's software adapter (WARP on Windows), which is
-  enough for a framebuffer this size.
+- With no GPU, wgpu takes the system's software adapter (WARP on Windows, Mesa's
+  lavapipe or llvmpipe on Linux), which is enough for a framebuffer this size.
+- **Linux loads its graphics at run time.** wgpu opens the Vulkan loader or libEGL, and
+  winit X11's or Wayland's libraries, only when the window opens, so the extension links
+  none of them and one manylinux wheel serves every distribution. OpenGL needs the
+  window's display when wgpu starts, so the instance is made with the window's handle.
 - wgpu reports errors to a handler that would panic by default. Pomona's handler keeps
   the first error, and the window ends with a `RuntimeError` instead.
 - The Mac's pointer shapes become the window's cursor.
@@ -163,6 +169,8 @@ the picture's pixels. The session sends them as they come.
   and on Windows that keeps every low-level hook, the grab's and other programs', from
   hearing a key while the window is in front.
 - **On macOS** winit's default menu is off, so Command-Q and Command-H reach the Mac.
+- **On Linux** there is no grab: the desktop keeps the shortcuts it takes, Super's
+  among them, as Windows would without its hook.
 
 ### The pasteboard
 

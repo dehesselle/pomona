@@ -80,15 +80,19 @@ struct Picture {
 
 impl Gpu {
     pub fn new(window: Arc<Window>) -> Result<Self, String> {
+        // D3D12 on Windows, Metal on macOS, Vulkan or else OpenGL on Linux; each
+        // build has only its own. OpenGL needs the window's display, on Wayland
+        // especially, before it can draw to it.
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::DX12 | wgpu::Backends::METAL,
-            ..wgpu::InstanceDescriptor::new_without_display_handle()
+            backends: wgpu::Backends::DX12 | wgpu::Backends::METAL | wgpu::Backends::VULKAN | wgpu::Backends::GL,
+            ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(window.clone()))
         });
         let surface = instance
             .create_surface(window.clone())
             .map_err(|error| format!("no surface for the window: {error}"))?;
         // A machine without a GPU, such as a virtual one, still has the
-        // system's software adapter (WARP on Windows).
+        // system's software adapter: WARP on Windows, lavapipe or llvmpipe
+        // on Linux.
         let adapter = [false, true]
             .into_iter()
             .find_map(|fallback| {

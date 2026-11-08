@@ -32,7 +32,8 @@ forward the Screen Sharing port for it.
 
 - SRP sign-in ([protocol.md](protocol.md#other-sign-in-types)).
 - Several displays: `SetDisplay`, and a choice of screen.
-- Linux.
+- Linux: the window on a real X11 and Wayland desktop, live, and input checked by a
+  tool (`input_check.py` is for Windows only). It draws under Xvfb so far.
 - The High Performance relay, if Adaptive turns out not to be enough
   ([high-performance.md](high-performance.md)).
 - Dead keys, live. Umlauts and AltGr on a German layout were tried by hand; dead keys
