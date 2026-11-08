@@ -7,15 +7,8 @@ the other documents.
 Every step ends with its tests passing on a devbox, and live against a NoMac Mac where
 the Mac is involved.
 
-## 1. The window on macOS, and on Retina
+## 1. What the window can draw
 
-- Build and try the window on macOS. No devbox runs macOS; a NoMac Mac is the likely
-  place, showing another NoMac Mac or itself.
-- The keys on a macOS client: Command and Option, and Command-Q reaching the Mac with
-  winit's menu off. They compile for macOS but have not run there.
-- The pointer's shape on a HiDPI client, where it is drawn at its size in points and so
-  looks small. (The window's scale works against a 4K Retina Mac from a Windows client
-  at 175%, tried by the user.)
 - Measure what the window can draw, apart from the path: a paced replay of a capture.
 
 Question: how does Adaptive look while it moves and refines (text while scrolling)?
@@ -32,6 +25,7 @@ forward the Screen Sharing port for it.
 
 - SRP sign-in ([protocol.md](protocol.md#other-sign-in-types)).
 - Several displays: `SetDisplay`, and a choice of screen.
+- Option on a macOS client, live. Command, and Command-Q reaching the Mac, were tried.
 - Linux: the window on a real X11 and Wayland desktop, live, and input checked by a
   tool (`input_check.py` is for Windows only). It draws under Xvfb so far.
 - The High Performance relay, if Adaptive turns out not to be enough

@@ -14,7 +14,7 @@ notes on the protocol were invaluable and its Adaptive decoder is included verba
 
 **Status:** early development. It shows the Mac's screen in a window, passes the
 keyboard, mouse and pasteboard text to it, and reconnects when the connection drops;
-tried on Windows.
+tried on Windows and macOS.
 
 ## Install and use
 
