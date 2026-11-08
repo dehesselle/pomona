@@ -33,6 +33,8 @@ FLAGS = 0x12
 # Accepts every client message type; NO_SCROLL lacks the scroll message (0x17).
 COMMANDS = bytes([0xFF] * 16)
 NO_SCROLL = bytes([0xFF, 0xFF, 0xFE]) + bytes([0xFF] * 13)
+# A pasteboard with nothing on it: one item with no flavors.
+EMPTY_PASTEBOARD = bytes(4)
 PRELUDE = (
     messages.viewer_info()
     + messages.set_mode_control()
@@ -102,7 +104,7 @@ class FakeMac:
         commands: bytes = COMMANDS,
         hang_up: bool = False,
         idle: float = 5.0,
-        pasteboard: bytes = b"        idle: float = 5.0,        idle: float = 5.0,        idle: float = 5.0,        idle: float = 5.0,",
+        pasteboard: bytes = EMPTY_PASTEBOARD,
     ) -> None:
         self.stream = stream
         self.user, self.password = user, password
