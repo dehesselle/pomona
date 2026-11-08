@@ -184,6 +184,20 @@ pub fn run(shared: Arc<Shared>, on_event: Py<PyAny>, options: Options) -> PyResu
     ran.map_err(|error| window_error(format!("the event loop failed: {error}")))
 }
 
+/// Give the window its icons, drawn for `scale`: the small one for the title
+/// bar and, on Windows, the large one for the taskbar and Alt-Tab, which would
+/// otherwise scale the small one up. macOS has no window icons, and winit sets
+/// none on Wayland.
+fn set_icons(window: &Window, scale: f64) {
+    let size = |points: f64| (points * scale).round() as u32;
+    window.set_window_icon(crate::icon::icon(size(16.0)));
+    #[cfg(target_os = "windows")]
+    {
+        use winit::platform::windows::WindowExtWindows;
+        window.set_taskbar_icon(crate::icon::icon(size(32.0)));
+    }
+}
+
 fn window_error(message: String) -> PyErr {
     pyo3::exceptions::PyRuntimeError::new_err(message)
 }
@@ -272,6 +286,7 @@ impl App {
                 .create_window(attributes)
                 .map_err(|error| format!("no window: {error}"))?,
         );
+        set_icons(&window, window.scale_factor());
         self.aspect = f64::from(width.max(1)) / f64::from(height.max(1));
         #[cfg(target_os = "windows")]
         {
@@ -562,6 +577,9 @@ impl ApplicationHandler<Wake> for App {
                 self.tell(event_loop, |py, f| f.call1(py, ("size", size.width, size.height)));
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                if let Some(gpu) = &self.gpu {
+                    set_icons(&gpu.window, scale_factor);
+                }
                 self.tell(event_loop, |py, f| f.call1(py, ("scale", scale_factor)))
             }
             // winit's own presses and releases around a change of focus are

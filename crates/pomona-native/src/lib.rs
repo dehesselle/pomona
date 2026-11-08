@@ -12,6 +12,7 @@ mod frame;
 mod gpu;
 #[cfg(target_os = "windows")]
 mod grab;
+mod icon;
 pub mod inflate;
 mod keys;
 mod picture;

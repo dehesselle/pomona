@@ -41,6 +41,7 @@ crates/pomona-native/         Rust: pomona._native
   clipboard.rs the local pasteboard, text only (arboard)
   grab.rs      the keys Windows would keep, grabbed (Windows only)
   frame.rs     the window held at the picture's shape while dragged (Windows only)
+  icon.rs      the window's icon, drawn by code
   gpu.rs       wgpu: the texture, uploads, drawing
 crates/apple-adaptive/        Rust: zDesk's Adaptive decoder, unchanged
 ```
@@ -114,6 +115,11 @@ How it runs:
 - wgpu reports errors to a handler that would panic by default. Pomona's handler keeps
   the first error, and the window ends with a `RuntimeError` instead.
 - The Mac's pointer shapes become the window's cursor.
+- **The icon is drawn by code** (`icon.rs`): a monitor, drawn again whenever the
+  window's scale changes, so it is sharp at any density and no image file is kept. It
+  shows on Windows, in the title bar, on the taskbar and in Alt-Tab, and on X11. macOS
+  has no window icons, and the Dock keeps the icon of the process the window is in;
+  winit sets none on Wayland.
 - `run_window`, not the session, closes the window when the session ends, so that a
   window can outlive its session. Closing the window ends the session.
 - **The window decides the scale.** It tells Python its size in pixels, and `Viewer`
