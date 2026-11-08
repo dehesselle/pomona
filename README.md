@@ -1,6 +1,8 @@
 # Pomona
 
-> _Pomona (Latin: [poːˈmoːna]) was a goddess of fruitful abundance and plenty in ancient Roman religion and myth. Her name comes from the Latin word pomum, "fruit", specifically orchard fruit._
+> __Pomona__ · _Latin: [poːˈmoːna]_
+>
+> Pomona was a goddess of fruitful abundance and plenty in ancient Roman religion and myth. Her name comes from the Latin word pomum, "fruit", specifically orchard fruit.
 >
 >_source: [Wikipedia](https://en.wikipedia.org/wiki/Pomona_(mythology))_
 
@@ -12,10 +14,6 @@ mode cannot. A Rust extension does the decoding and draws the window.
 Pomona builds on [zDesk](https://github.com/andrewtheguy/zdesk) by Andrew Chen: its
 notes on the protocol were invaluable and its Adaptive decoder is included verbatim.
 
-**Status:** early development. It shows the Mac's screen in a window, passes the
-keyboard, mouse and pasteboard text to it, and reconnects when the connection drops;
-tried on Windows and macOS.
-
 ## Install and use
 
 Releases have wheels for Windows x86_64, macOS on Apple silicon and Linux x86_64, for
@@ -24,10 +22,10 @@ Rust toolchain:
 
 ```sh
 uv sync
-uv run pomona mac.example.com -u me
+uv run pomona mac.example.com -u me   # will prompt for password
 ```
 
-Pomona asks for the account's password. To reach the Mac through ssh, see
+To reach the Mac through ssh, see
 [the manual](docs/MANUAL.md#reaching-the-mac).
 
 The macOS account needs Remote Management permission; without it, the Mac refuses the
