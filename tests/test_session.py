@@ -129,11 +129,7 @@ def test_the_session_ends_when_the_mac_hangs_up():
     mac = fakemac.FakeMac(FIXTURE[:5000], hang_up=True)
     session = connect_to(mac)
     assert session.wait(10)
-    # A clean end of stream, or, when our last messages went unread, a reset
-    # (Linux) or an abort (Windows).
-    assert "closed the connection" in str(session.error) or isinstance(
-        session.error, ConnectionError
-    )
+    assert "closed the connection" in str(session.error)
     session.close()
     mac.join()
 
@@ -152,7 +148,7 @@ def test_a_session_has_not_ended_while_its_reader_still_draws():
     # The writer finds the connection dead while the reader is still in the
     # middle of what came before: a session following this one must not
     # start on the picture yet.
-    mac = fakemac.FakeMac(first_update(), hang_up=True)
+    mac = fakemac.FakeMac(first_update(), abort=True)
     drawing, release = threading.Event(), threading.Event()
 
     def hold(_update):

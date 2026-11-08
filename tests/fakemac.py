@@ -88,9 +88,14 @@ class FakeMac:
     out in records of the sizes `chunks` cycles through, so messages span
     records as they do from a Mac. What the client sent after the rekey is in
     `received`, and an assertion that failed in the thread is in `failure`.
-    With `hang_up`, it closes the connection once the stream is out; otherwise
-    it waits for the client until `idle` seconds pass without a message, and
-    answers a pasteboard fetch with `pasteboard`, an uncompressed archive.
+    With `hang_up`, it ends its side once the stream is out, and reads what
+    the client still sends, unanswered, until the client closes too. With
+    `abort`, it closes the connection there instead, with what the client sent
+    unread: the kernel answers the client with a reset, which the client finds
+    when it next sends, but on macOS may never find while it only reads.
+    Otherwise it waits for the client until `idle` seconds pass without a
+    message, and answers a pasteboard fetch with `pasteboard`, an uncompressed
+    archive.
     """
 
     def __init__(
@@ -103,6 +108,7 @@ class FakeMac:
         misc_status_before_rekey: bool = True,
         commands: bytes = COMMANDS,
         hang_up: bool = False,
+        abort: bool = False,
         idle: float = 5.0,
         pasteboard: bytes = EMPTY_PASTEBOARD,
     ) -> None:
@@ -112,6 +118,7 @@ class FakeMac:
         self.misc_status_before_rekey = misc_status_before_rekey
         self.commands = commands
         self.hang_up = hang_up
+        self.abort = abort
         self.idle = idle
         self.pasteboard = pasteboard
         self.received: list[bytes] = []
@@ -195,11 +202,14 @@ class FakeMac:
             conn.sendall(outbound.seal(self.stream[position : position + size]))
             position += size
             turn += 1
+        if self.abort:
+            return
+        conn.settimeout(self.idle)
         if self.hang_up:
+            self._hang_up(conn)
             return
         # What the client sent meanwhile: arming, a request, input. It stops
         # with the client closing the connection.
-        conn.settimeout(self.idle)
         try:
             while True:
                 message = inbound.open(conn)
@@ -207,6 +217,19 @@ class FakeMac:
                 if message[0] == 0x0B:
                     conn.sendall(outbound.seal(self._pasteboard(message[4:8])))
         except (EOFError, ConnectionError):
+            pass
+
+    @staticmethod
+    def _hang_up(conn: socket.socket) -> None:
+        # The end of the stream goes out after all of it. Closing with the
+        # client's bytes unread would reset the connection and drop what had
+        # not gone out yet, the end included; a client on macOS then waited
+        # in recv until it sent something.
+        conn.shutdown(socket.SHUT_WR)
+        try:
+            while conn.recv(1 << 16):
+                pass
+        except OSError:
             pass
 
     def _pasteboard(self, echo: bytes) -> bytes:

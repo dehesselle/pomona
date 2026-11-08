@@ -75,7 +75,10 @@ apart from them, after every update.
 sign-in, ServerInit, the prelude and the rekey, then replays a stream through the record
 layer in records of uneven sizes and keeps what the client sent. Its record layer is
 written apart from `pomona.record`, so a mistake made the same way on both sides still
-fails. It answers a pasteboard fetch with an archive the test gives it.
+fails. It answers a pasteboard fetch with an archive the test gives it. It hangs up by
+ending its side and reading until the client closes: a close with the client's bytes
+unread resets the connection, and a client on macOS then sometimes waits in `recv`
+until it next sends.
 `tests/test_session.py`, `test_pasteboard.py` and `test_window.py` (reconnecting,
 without a window) run whole sessions against it.
 

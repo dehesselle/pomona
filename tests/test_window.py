@@ -198,7 +198,10 @@ def test_a_following_session_draws_afresh_on_the_same_picture():
         ),
     )
     viewer.start()
-    assert done.wait(30), f"{seen} of {UPDATES} updates"
+    assert done.wait(30), (
+        f"{seen} of {UPDATES} updates; the first session"
+        f" {'ended: ' + repr(session.error) if session.wait(0) else 'never ended'}"
+    )
     snapshot = viewer.session.picture.snapshot()
     viewer.stop()
     dropping.join()
